@@ -1,0 +1,9 @@
+fastapi>=0.115
+uvicorn[standard]>=0.32
+lxml>=5.0
+ebooklib>=0.18
+pypdf>=5.0
+pillow>=10.0
+pymupdf>=1.24
+httpx>=0.27
+pytest>=8.0

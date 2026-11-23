@@ -1,0 +1,230 @@
+<template>
+  <section class="page">
+    <header class="page-head">
+      <div>
+        <h1>{{ organized ? "已整理重复" : "未分类重复" }}</h1>
+        <p class="lede">书名相同或 ISBN 相同，并且丛书序号、上下册也相同，才放在一组。每组默认只留一本，优先留 EPUB，其次留其他非 PDF 格式。其余副本都会勾选。可以改勾选后再删除，未勾选的会保留。这组不用处理时点忽视，文件不会删除。</p>
+      </div>
+    </header>
+    <div class="toolbar">
+      <span class="muted">{{ groupCount }} 组，{{ bookCount }} 本</span>
+      <span class="spacer"></span>
+      <span class="muted">已选 {{ picked.size }} 本</span>
+      <button class="danger" :disabled="!picked.size" @click="removeBooks">删除所选</button>
+    </div>
+    <p v-if="message" :class="error ? 'error' : 'muted'">{{ message }}</p>
+    <p v-if="!groups.length" class="empty">没有重复图书。</p>
+    <article v-for="group in groups" :key="group.label + group.books[0].id" class="panel dup-group">
+      <div class="dup-head">
+        <h2>{{ group.label }} <span class="muted">{{ group.count }} 本</span></h2>
+        <div class="dup-actions">
+          <span class="muted">已选 {{ groupPicked(group) }} 本</span>
+          <button class="danger" :disabled="!groupPicked(group)" @click="removeGroup(group)">删除所选</button>
+          <button class="ghost" @click="ignoreGroup(group)">忽视</button>
+        </div>
+      </div>
+      <div class="dup-cards">
+        <article v-for="book in group.books" :key="book.id" class="dup-card" :class="{ picked: picked.has(book.id), pending: !hasFormat(book.primary_format) }" @click="toggle(book.id)">
+          <input type="checkbox" :checked="picked.has(book.id)" @click.stop @change="toggle(book.id)" />
+          <img
+            v-if="!hiddenCovers[book.id]"
+            class="cover"
+            :src="`/api/covers/${book.id}?store=${store}`"
+            alt=""
+            draggable="false"
+            loading="lazy"
+            @error="hiddenCovers[book.id] = true"
+          />
+          <span v-else class="cover placeholder">无封面</span>
+          <span class="dup-meta">
+            <span>
+              <button class="book-title" @click.stop="detailId = book.id">{{ book.title || "未命名" }}</button>
+              <span v-if="isLargest(group, book)" class="dup-keep">最大</span>
+            </span>
+            <span class="muted">大小 {{ formatSize(book.size) }}</span>
+            <span class="muted" :class="{ 'pending-format': !hasFormat(book.primary_format) }">格式 {{ hasFormat(book.primary_format) ? formatLabel(book.primary_format) : "待删除" }}</span>
+            <span class="muted">作者 {{ book.authors_text || "—" }}</span>
+            <span v-if="seriesLabel(book)" class="muted">{{ seriesLabel(book) }}</span>
+            <span class="dup-path">{{ book.relative_path }}</span>
+          </span>
+        </article>
+      </div>
+    </article>
+    <BookDrawer :book-id="detailId" :store="store" @close="detailId = null" @saved="load" />
+  </section>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import BookDrawer from "../components/BookDrawer.vue";
+import { api, ApiError, waitJob } from "../api";
+
+const props = defineProps<{ organized?: boolean }>();
+const organized = computed(() => !!props.organized);
+const store = computed(() => (organized.value ? "shelf" : "library"));
+const groups = ref<{ label: string; count: number; books: DuplicateBook[] }[]>([]);
+const groupCount = ref(0);
+const bookCount = ref(0);
+const picked = ref(new Set<number>());
+const hiddenCovers = reactive<Record<number, boolean>>({});
+const detailId = ref<number | null>(null);
+const message = ref("");
+const error = ref(false);
+
+interface DuplicateBook {
+  id: number;
+  title: string;
+  authors_text: string;
+  primary_format: string;
+  size: number;
+  relative_path: string;
+  series?: string;
+  series_index?: string;
+}
+
+function hasFormat(value: string | null | undefined) {
+  return !!(value || "").replace(/^\./, "").trim();
+}
+
+function formatLabel(value: string | null | undefined) {
+  const text = (value || "").replace(/^\./, "").trim();
+  return text ? text.toUpperCase() : "—";
+}
+
+function seriesLabel(book: DuplicateBook) {
+  const name = (book.series || "").trim();
+  const index = (book.series_index || "").trim();
+  if (name && index) return `${name} #${index}`;
+  if (index) return `#${index}`;
+  return name;
+}
+
+function formatSize(size: number | null | undefined) {
+  if (!size || size <= 0) return "—";
+  const mb = size / (1024 * 1024);
+  if (mb < 0.01) return "0.01 MB";
+  return `${mb.toFixed(2)} MB`;
+}
+
+function bySize(a: DuplicateBook, b: DuplicateBook) {
+  return (b.size || 0) - (a.size || 0) || a.id - b.id;
+}
+
+function isLargest(group: { books: DuplicateBook[] }, book: DuplicateBook) {
+  const largest = [...group.books].sort(bySize)[0];
+  return largest?.id === book.id;
+}
+
+function bookFormat(book: DuplicateBook) {
+  return (book.primary_format || "").replace(/^\./, "").trim().toLowerCase();
+}
+
+function selectDefaultCopies(list: { books: DuplicateBook[] }[]) {
+  const next = new Set<number>();
+  for (const group of list) {
+    const ranked = [...group.books].sort((a, b) => {
+      const rank = (book: DuplicateBook) => {
+        const format = bookFormat(book);
+        if (format === "epub") return 0;
+        if (format && format !== "pdf") return 1;
+        if (format === "pdf") return 2;
+        return 3;
+      };
+      return rank(a) - rank(b) || bySize(a, b);
+    });
+    const keep = ranked[0];
+    for (const book of group.books) {
+      if (book.id !== keep?.id) next.add(book.id);
+    }
+  }
+  picked.value = next;
+}
+
+function groupPicked(group: { books: DuplicateBook[] }) {
+  return group.books.filter((book) => picked.value.has(book.id)).length;
+}
+
+function toggle(id: number) {
+  const next = new Set(picked.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  picked.value = next;
+}
+
+async function load() {
+  const data = await api<{ groups: typeof groups.value; group_count: number; book_count: number }>(
+    `/api/books/duplicates?store=${store.value}`,
+  );
+  groups.value = data.groups.map((group) => ({
+    ...group,
+    books: [...group.books].sort(bySize),
+  }));
+  groupCount.value = data.group_count;
+  bookCount.value = data.book_count;
+  selectDefaultCopies(groups.value);
+}
+
+async function ignoreGroup(group: { label: string; books: DuplicateBook[] }) {
+  error.value = false;
+  try {
+    await api(`/api/books/duplicates/ignore?store=${store.value}`, {
+      method: "POST",
+      body: JSON.stringify({ book_ids: group.books.map((book) => book.id) }),
+    });
+    message.value = "已忽视这一组";
+    picked.value = new Set([...picked.value].filter((id) => !group.books.some((book) => book.id === id)));
+  } catch (err) {
+    message.value = err instanceof ApiError ? err.message : "忽视失败";
+    error.value = true;
+  }
+  await load();
+}
+
+async function removeGroup(group: { books: DuplicateBook[] }) {
+  const ids = group.books.map((book) => book.id).filter((id) => picked.value.has(id));
+  if (!ids.length) return;
+  error.value = false;
+  try {
+    const job = await api<{ id: number }>(`/api/books/delete?store=${store.value}`, {
+      method: "POST",
+      body: JSON.stringify({ book_ids: ids }),
+    });
+    const done = await waitJob(job.id);
+    message.value = done.message || done.status;
+    error.value = done.status === "failed";
+    picked.value = new Set([...picked.value].filter((id) => !ids.includes(id)));
+  } catch (err) {
+    message.value = err instanceof ApiError ? err.message : "删除失败";
+    error.value = true;
+  }
+  await load();
+}
+
+async function removeBooks() {
+  const ids = [...picked.value];
+  if (!ids.length) return;
+  error.value = false;
+  try {
+    const job = await api<{ id: number }>(`/api/books/delete?store=${store.value}`, {
+      method: "POST",
+      body: JSON.stringify({ book_ids: ids }),
+    });
+    const done = await waitJob(job.id);
+    message.value = done.message || done.status;
+    error.value = done.status === "failed";
+    picked.value = new Set();
+  } catch (err) {
+    message.value = err instanceof ApiError ? err.message : "删除失败";
+    error.value = true;
+  }
+  await load();
+}
+
+watch(organized, () => {
+  picked.value = new Set();
+  message.value = "";
+  load();
+});
+
+onMounted(load);
+</script>
