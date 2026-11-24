@@ -1,3 +1,4 @@
+name: book-manager
 services:
   book-manager:
     build: .
@@ -7,6 +8,6 @@ services:
       BOOK_MANAGER_DATA: /data
     volumes:
       - /volume2/docker/book-manager/data:/data
-      - /volume2/书库:/library
-      - /volume2/books:/shelf
+      - /volume3/书库:/library
+      - /volume3/books:/shelf
     restart: unless-stopped

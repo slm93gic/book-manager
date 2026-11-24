@@ -1,8 +1,12 @@
 <template>
   <section class="page">
-    <h1>设置</h1>
-    <p class="muted">原始目录在书库共享里。分类文件夹建在另一个共享，例如 books/小说。移动由你手动确认。</p>
-    <form class="panel" style="padding: 16px; max-width: 720px" @submit.prevent="save">
+    <header class="page-head">
+      <h1>设置</h1>
+      <p v-if="status" class="stat-line"><strong>{{ status.book_count }}</strong> 本<span></span><strong>{{ status.folder_count }}</strong> 个目录</p>
+    </header>
+    <form class="panel sheet" @submit.prevent="save">
+      <div class="panel-head"><h2>书库连接</h2></div>
+      <div class="sheet-body">
       <label class="field">原始目录<input v-model="form.smb_host" placeholder="smb://192.168.31.88/书库/" @change="applySmbAddress" /></label>
       <label class="field">共享名<input v-model="form.smb_share" placeholder="粘贴完整地址时自动填入，例如 书库" /></label>
       <label class="field">共享内子路径<input v-model="form.smb_path" placeholder="可选" /></label>
@@ -10,6 +14,9 @@
       <label class="field">账户<input v-model="form.smb_username" placeholder="Samba 用户名" /></label>
       <label class="field">密码<input v-model="form.smb_password" type="password" :placeholder="status?.smb_password_set ? '已保存，留空则不修改' : 'SMB 密码'" /></label>
       <label class="field">本机路径（不使用 SMB 时填写）<input v-model="form.library_root" placeholder="例如 D:\Books 或 Z:\Books" /></label>
+      </div>
+      <div class="panel-head"><h2>索引</h2></div>
+      <div class="sheet-body">
       <label class="field">识别扩展名，一行一个<textarea v-model="form.extensions" /></label>
       <label class="field">排除目录，一行一个<textarea v-model="form.excludes" /></label>
       <label class="field">只索引这些路径（可空）<textarea v-model="form.includes" /></label>
@@ -20,12 +27,15 @@
       <p class="muted" v-if="status">索引 {{ status.db_path }} · {{ status.readable ? "可读" : "不可读" }} · {{ status.writable ? "可写" : "不可写" }}</p>
       <p v-if="message" :class="error ? 'error' : 'muted'">{{ message }}</p>
       <button class="primary" type="submit">保存</button>
+      </div>
     </form>
-    <form class="panel" style="padding: 16px; max-width: 720px; margin-top: 12px" @submit.prevent="changePassword">
-      <h2>更换口令</h2>
+    <form class="panel sheet" @submit.prevent="changePassword">
+      <div class="panel-head"><h2>更换口令</h2></div>
+      <div class="sheet-body">
       <label class="field">原口令<input v-model="oldPassword" type="password" /></label>
       <label class="field">新口令<input v-model="password" type="password" /></label>
       <button class="ghost" type="submit">更新口令</button>
+      </div>
     </form>
   </section>
 </template>

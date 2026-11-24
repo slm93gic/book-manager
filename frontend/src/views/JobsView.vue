@@ -1,13 +1,20 @@
 <template>
   <section class="page">
-    <h1>任务</h1>
-    <div class="toolbar">
+    <header class="page-head">
+      <h1>任务</h1>
+      <p v-if="total" class="stat-line"><strong>{{ total }}</strong> 个</p>
+    </header>
+    <div class="toolbar compact">
       <button class="danger" @click="clearRecords">清空扫描记录</button>
     </div>
     <p v-if="message" class="error">{{ message }}</p>
     <p v-if="!jobs.length" class="empty">没有任务。</p>
-    <article v-for="job in jobs" :key="job.id" class="panel" style="padding: 12px; margin-bottom: 8px">
-      <strong>#{{ job.id }} {{ names[job.type] || job.type }} · {{ labels[job.status] || job.status }}</strong>
+    <article v-for="job in jobs" :key="job.id" class="panel job-card" :class="{ live: live(job) }">
+      <div class="panel-head">
+        <h2>#{{ job.id }} {{ names[job.type] || job.type }}</h2>
+        <span class="status-pill" :data-status="job.status">{{ labels[job.status] || job.status }}</span>
+      </div>
+      <div class="sheet-body">
       <p>{{ job.message }}</p>
       <div v-if="live(job)" class="job-ops">
         <button class="ghost" :disabled="job.status === 'paused'" @click="command(job, 'pause')">暂停</button>
@@ -22,6 +29,7 @@
         阶段 {{ job.progress.phase || "-" }}，目录 {{ job.progress.dirs || 0 }}，图书 {{ job.progress.books || job.progress.moved || 0 }}，已解析 {{ job.progress.parsed || 0 }}，失败 {{ job.progress.failed || 0 }}
       </p>
       <a :href="`/api/jobs/${job.id}/errors`" target="_blank">导出失败明细</a>
+      </div>
     </article>
     <div v-if="total" class="pager">
       <button class="ghost" :disabled="page <= 1" @click="load(page - 1)">上一页</button>

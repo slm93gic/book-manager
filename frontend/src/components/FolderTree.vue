@@ -1,5 +1,6 @@
 <template>
   <div class="tree panel">
+    <div class="panel-head"><h2>目录</h2></div>
     <div
       class="tree-item"
       :class="{ active: selectedId === root?.id, over: overId === root?.id }"

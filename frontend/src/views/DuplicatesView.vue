@@ -1,24 +1,23 @@
 <template>
-  <section class="page">
-    <header class="page-head">
-      <div>
-        <h1>{{ organized ? "已整理重复" : "未分类重复" }}</h1>
-        <p class="lede">书名相同或 ISBN 相同，并且丛书序号、上下册也相同，才放在一组。每组默认只留一本，优先留 EPUB，其次留其他非 PDF 格式。其余副本都会勾选。可以改勾选后再删除，未勾选的会保留。这组不用处理时点忽视，文件不会删除。</p>
-      </div>
+  <section class="page dup-page">
+    <header class="page-head dup-hero">
+      <h1>{{ organized ? "已整理重复" : "未分类重复" }}</h1>
+      <p v-if="groupCount" class="dup-stats"><strong>{{ groupCount }}</strong> 组<span></span><strong>{{ bookCount }}</strong> 本</p>
     </header>
-    <div class="toolbar">
-      <span class="muted">{{ groupCount }} 组，{{ bookCount }} 本</span>
-      <span class="spacer"></span>
-      <span class="muted">已选 {{ picked.size }} 本</span>
+    <div class="dup-delete-bar">
+      <span class="dup-selected">已选 <strong>{{ picked.size }}</strong> 本</span>
       <button class="danger" :disabled="!picked.size" @click="removeBooks">删除所选</button>
     </div>
     <p v-if="message" :class="error ? 'error' : 'muted'">{{ message }}</p>
     <p v-if="!groupCount" class="empty">没有重复图书。</p>
     <article v-for="group in groups" :key="group.label + group.books[0].id" class="panel dup-group">
       <div class="dup-head">
-        <h2>{{ group.label }} <span class="muted">{{ group.count }} 本</span></h2>
+        <div class="dup-title">
+          <h2>{{ group.label }}</h2>
+          <span class="dup-count">{{ group.count }} 本</span>
+        </div>
         <div class="dup-actions">
-          <span class="muted">已选 {{ groupPicked(group) }} 本</span>
+          <span class="dup-picked">已选 {{ groupPicked(group) }} 本</span>
           <button class="danger" :disabled="!groupPicked(group)" @click="removeGroup(group)">删除所选</button>
           <button class="ghost" @click="ignoreGroup(group)">忽视</button>
         </div>
@@ -37,15 +36,20 @@
           />
           <span v-else class="cover placeholder">无封面</span>
           <span class="dup-meta">
-            <span>
-              <button class="book-title" @click.stop="detailId = book.id">{{ book.title || "未命名" }}</button>
-              <span v-if="isLargest(group, book)" class="dup-keep">最大</span>
+            <span class="dup-name">
+              <button class="book-title" :title="book.title || '未命名'" @click.stop="detailId = book.id">{{ book.title || "未命名" }}</button>
+              <span v-if="!picked.has(book.id)" class="dup-keep">保留</span>
+              <span v-if="isLargest(group, book)" class="dup-max">最大</span>
             </span>
-            <span class="muted">大小 {{ formatSize(book.size) }}</span>
-            <span class="muted" :class="{ 'pending-format': !hasFormat(book.primary_format) }">格式 {{ hasFormat(book.primary_format) ? formatLabel(book.primary_format) : "待删除" }}</span>
-            <span class="muted">作者 {{ book.authors_text || "—" }}</span>
-            <span v-if="seriesLabel(book)" class="muted">{{ seriesLabel(book) }}</span>
-            <span class="dup-path">{{ book.relative_path }}</span>
+            <span v-if="seriesLabel(book)" class="dup-series">{{ seriesLabel(book) }}</span>
+            <span class="card-foot">
+              <span class="dup-facts">
+                <span class="fact-size">大小 {{ formatSize(book.size) }}</span>
+                <span class="fact-format" :class="{ 'pending-format': !hasFormat(book.primary_format) }">格式 {{ hasFormat(book.primary_format) ? formatLabel(book.primary_format) : "待删除" }}</span>
+                <span class="fact-author" :title="book.authors_text || '—'">作者 {{ book.authors_text || "—" }}</span>
+              </span>
+              <span class="dup-path" :title="book.relative_path">{{ book.relative_path }}</span>
+            </span>
           </span>
         </article>
       </div>

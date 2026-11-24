@@ -4,15 +4,16 @@
     <aside class="nav">
       <p class="brand"><span class="brand-mark">书</span>图书分类</p>
       <p class="nav-label">浏览</p>
-      <router-link to="/unclassified">未分类</router-link>
-      <router-link to="/classified">已整理</router-link>
+      <router-link to="/unclassified"><span class="nav-icon">📚</span>未分类</router-link>
+      <router-link to="/classified"><span class="nav-icon">📗</span>已整理</router-link>
       <p class="nav-label">整理</p>
-      <router-link to="/duplicates/unclassified">未分类重复</router-link>
-      <router-link to="/duplicates/classified">已整理重复</router-link>
-      <router-link to="/jobs">任务</router-link>
-      <router-link to="/log">操作日志</router-link>
+      <router-link to="/duplicates/unclassified"><span class="nav-icon">🔁</span>未分类重复</router-link>
+      <router-link to="/duplicates/classified"><span class="nav-icon">📑</span>已整理重复</router-link>
+      <p class="nav-label">记录</p>
+      <router-link to="/jobs"><span class="nav-icon">📋</span>任务</router-link>
+      <router-link to="/log"><span class="nav-icon">📝</span>操作日志</router-link>
       <div class="nav-spacer"></div>
-      <router-link to="/settings">设置</router-link>
+      <router-link to="/settings"><span class="nav-icon">⚙️</span>设置</router-link>
     </aside>
     <div class="main">
       <div v-if="active.length" class="job-banners">

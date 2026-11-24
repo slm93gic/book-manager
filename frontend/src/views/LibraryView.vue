@@ -1,10 +1,7 @@
 <template>
   <section class="page" :class="{ focused: unclassified || organized }">
-    <header v-if="!(unclassified || organized)" class="page-head">
-      <div>
-        <h1>{{ pageTitle }}</h1>
-        <p class="lede">{{ pageHint }}</p>
-      </div>
+    <header class="page-head">
+      <h1>{{ pageTitle }}</h1>
     </header>
     <div class="toolbar" :class="{ compact: unclassified || organized }">
       <div class="toolbar-search">
@@ -103,18 +100,22 @@
               />
               <span v-else class="cover placeholder">无封面</span>
               <span class="lib-meta">
-                <span>
-                  <button class="book-title" :class="{ bad: book.title_issue }" @click.stop="detailId = book.id">{{ book.title || "未命名" }}</button>
+                <span class="lib-name">
+                  <button class="book-title" :class="{ bad: book.title_issue }" :title="book.title || '未命名'" @click.stop="detailId = book.id">{{ book.title || "未命名" }}</button>
                   <span v-if="book.name_conflict" class="mark">同名</span>
                   <span v-if="book.title_issue" class="mark bad">{{ book.title_issue === "pinyin" ? "拼音" : "《》" }}</span>
                   <button v-if="book.title_issue" type="button" class="rename-one" @click.stop="renameMarked([book])">重命名</button>
                 </span>
-                <span class="muted">大小 {{ formatSize(book.size) }}</span>
-                <span class="muted" :class="{ 'pending-format': !hasFormat(book.primary_format) }">格式 {{ hasFormat(book.primary_format) ? formatLabel(book.primary_format) : "待删除" }}</span>
-                <span class="muted">作者 {{ book.authors_text || "—" }}</span>
                 <span v-if="unclassified && book.suggested_category" class="suggest">推荐 {{ book.suggested_category }}</span>
-                <span class="muted" v-if="book.series">{{ book.series }} #{{ book.series_index }}</span>
-                <span class="lib-path">{{ book.relative_path }}</span>
+                <span class="dup-series" v-if="book.series">{{ book.series }} #{{ book.series_index }}</span>
+                <span class="card-foot">
+                  <span class="lib-facts">
+                    <span class="fact-size">大小 {{ formatSize(book.size) }}</span>
+                    <span class="fact-format" :class="{ 'pending-format': !hasFormat(book.primary_format) }">格式 {{ hasFormat(book.primary_format) ? formatLabel(book.primary_format) : "待删除" }}</span>
+                    <span class="fact-author" :title="book.authors_text || '—'">作者 {{ book.authors_text || "—" }}</span>
+                  </span>
+                  <span class="lib-path" :title="book.relative_path">{{ book.relative_path }}</span>
+                </span>
               </span>
             </article>
           </div>
@@ -258,9 +259,6 @@ const organized = ref(!!props.organized || route.path === "/classified");
 const pageTitle = computed(() => (organized.value ? "已整理" : unclassified.value ? "未分类" : "书库"));
 const searchPlaceholder = computed(() =>
   unclassified.value ? "搜索书名、作者、标签、路径、推荐分类" : "搜索书名、作者、标签、路径",
-);
-const pageHint = computed(() =>
-  organized.value ? "books 共享里已经归类的图书。" : unclassified.value ? "书库共享里等待整理的图书。" : "书库共享中的全部图书。",
 );
 const store = computed(() => (organized.value ? "shelf" : "library"));
 const books = ref<BookRow[]>([]);

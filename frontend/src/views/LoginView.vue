@@ -1,7 +1,7 @@
 <template>
   <form class="login" @submit.prevent="submit">
+    <p class="eyebrow">图书分类</p>
     <h1>{{ setup ? "设置口令" : "登录" }}</h1>
-    <p class="muted">这个服务能移动 NAS 上的图书文件夹，请设置口令后再在局域网使用。</p>
     <div class="field">
       <label>口令</label>
       <input v-model="password" type="password" autocomplete="current-password" />

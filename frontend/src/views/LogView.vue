@@ -1,10 +1,16 @@
 <template>
   <section class="page">
-    <h1>操作日志</h1>
-    <article v-for="item in items" :key="item.id" class="panel" style="padding: 12px; margin-bottom: 8px">
-      <strong>#{{ item.id }}</strong> {{ item.summary }}
-      <span class="muted">{{ item.created_at }}</span>
-      <div class="row" style="margin-top: 8px">
+    <header class="page-head">
+      <h1>操作日志</h1>
+      <p v-if="items.length" class="stat-line"><strong>{{ items.length }}</strong> 条</p>
+    </header>
+    <article v-for="item in items" :key="item.id" class="panel log-card">
+      <div class="panel-head">
+        <h2>#{{ item.id }} {{ item.summary }}</h2>
+        <span class="status-pill">{{ item.created_at }}</span>
+      </div>
+      <div class="sheet-body">
+      <div class="row">
         <button class="ghost" @click="open(item.id)">明细</button>
         <button class="danger" :disabled="item.undone" @click="undo(item.id)">撤销</button>
       </div>
@@ -14,6 +20,7 @@
           <span class="error" v-if="row.error">{{ row.error }}</span>
         </li>
       </ul>
+      </div>
     </article>
     <p v-if="message">{{ message }}</p>
   </section>
