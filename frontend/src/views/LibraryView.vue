@@ -101,6 +101,7 @@
                 <span v-if="book.name_conflict" class="mark">同名</span>
                 <span v-if="book.title_issue === 'brackets'" class="mark bad">《》</span>
                 <button v-if="book.title_issue === 'brackets'" type="button" class="rename-one" @click.stop="renameMarked([book])">重命名</button>
+                <button v-if="stripLeadingNumber(book.title)" type="button" class="rename-one" @click.stop="stripNumberTitle(book)">去数字</button>
               </span>
             </article>
           </div>
@@ -741,6 +742,35 @@ async function renamePicked() {
     error.value = failed > 0;
   });
   await load(page.value);
+}
+
+async function stripNumberTitle(book: BookRow) {
+  const next = stripLeadingNumber(book.title);
+  if (!next) return;
+  const current = book.title || "未命名";
+  if (!window.confirm(`把「${current}」改为「${next}」，去掉开头的数字，并回写书名？名称不长时也会重命名文件夹。`)) return;
+  await act(async () => {
+    const result = await api<{ renamed: number; written: number; failed: { error: string }[] }>(`/api/books/strip-number-titles?store=${store.value}`, {
+      method: "POST",
+      body: JSON.stringify({ book_ids: [book.id] }),
+    });
+    const failed = result.failed?.length || 0;
+    message.value = failed
+      ? `已改 ${result.renamed} 本，回写 ${result.written} 本，失败 ${failed} 本`
+      : `已改为「${next}」，并回写书名`;
+    error.value = failed > 0;
+  });
+  await load(page.value);
+}
+
+function stripLeadingNumber(title: string) {
+  const text = (title || "").trim();
+  const matched = text.match(/^[0-9０-９]+/);
+  if (!matched) return "";
+  let rest = text.slice(matched[0].length);
+  if (/^[-－~～][0-9０-９]/.test(rest)) return "";
+  rest = rest.replace(/^[ \t._．、·•+#\-－]+/, "").trim();
+  return rest;
 }
 
 async function renameMarked(rows: BookRow[]) {

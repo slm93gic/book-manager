@@ -34,6 +34,7 @@ from .catalog import (
     save_settings,
     edit_book_tags,
     rename_marked_books,
+    rename_leading_numbers,
     prepare_replace,
     update_book,
     update_folder,
@@ -310,6 +311,15 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             raise HTTPException(409, "有任务正在运行，请先在任务页暂停或取消对应任务再重命名")
         try:
             return rename_marked_books(active_db(request), body.book_ids)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/books/strip-number-titles")
+    def strip_number_titles(body: DeleteBooksBody, request: Request):
+        if request.app.state.core.jobs.busy():
+            raise HTTPException(409, "有任务正在运行，请先在任务页暂停或取消对应任务再重命名")
+        try:
+            return rename_leading_numbers(active_db(request), body.book_ids)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 

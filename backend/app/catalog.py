@@ -1610,6 +1610,63 @@ def rename_marked_books(db: Database, book_ids: list[int]) -> dict:
     return {"renamed": renamed, "written": written, "failed": failed}
 
 
+def rename_leading_numbers(db: Database, book_ids: list[int]) -> dict:
+    """去掉书名开头的数字，回写 metadata.opf，名称不长时一并重命名文件夹。"""
+    ids = [int(item) for item in book_ids]
+    if not ids:
+        raise ValueError("请先选择图书")
+    ensure_connected(db)
+    renamed = 0
+    written = 0
+    failed: list[dict] = []
+    for book_id in ids:
+        try:
+            outcome = _rename_one_leading_number(db, book_id)
+        except (OSError, ValueError) as exc:
+            failed.append({"id": book_id, "error": str(exc)})
+            continue
+        if outcome.get("skipped"):
+            continue
+        if outcome.get("error"):
+            failed.append({"id": book_id, "error": outcome["error"]})
+            continue
+        if outcome.get("changed"):
+            renamed += 1
+        report = write_back_fields(db, book_id, outcome["fields"])
+        if report["failed"]:
+            failed.append({"id": book_id, "error": report["failed"][0]["error"]})
+        else:
+            written += report["written"]
+    return {"renamed": renamed, "written": written, "failed": failed}
+
+
+def _rename_one_leading_number(db: Database, book_id: int) -> dict:
+    from .metadata import strip_leading_number
+
+    with db.transaction() as conn:
+        row = conn.execute("SELECT * FROM books WHERE id=? AND missing=0", (book_id,)).fetchone()
+        if not row:
+            return {"error": "图书不存在或已缺失"}
+        new_title = strip_leading_number(row["title"])
+        if not new_title or new_title == (row["title"] or ""):
+            return {"skipped": True}
+        folder_name = row["folder_name"] or ""
+        new_folder = new_title if len(new_title) <= _FOLDER_NAME_LIMIT and not name_error(new_title) else ""
+        rename_folder = bool(new_folder) and new_folder != folder_name
+        relative = row["relative_path"]
+        if rename_folder:
+            parent = parent_rel(relative) or ""
+            if name_taken(_place(db, parent), new_folder):
+                return {"error": "同名文件夹已存在"}
+            new_rel = join_rel(parent, new_folder)
+            os.rename(_place(db, relative), _place(db, new_rel))
+            _move_prefix(conn, relative, new_rel)
+            conn.execute("UPDATE folders SET name=? WHERE relative_path=?", (new_folder, new_rel))
+        conn.execute("UPDATE books SET title=?, lock_title=1 WHERE id=?", (new_title, book_id))
+        refresh_fts(conn, book_id)
+    return {"changed": True, "fields": {"title": new_title}}
+
+
 def _replace_terms(find: str, finds: list[str] | None) -> list[str]:
     terms = [item for item in (finds or []) if item != ""]
     if not terms and find != "":

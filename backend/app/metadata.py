@@ -178,6 +178,25 @@ def _people(value: str) -> list[str] | None:
     return names or None
 
 
+_LEADING_DIGITS = re.compile(r"^[0-9０-９]+")
+_LEADING_SEPARATOR = re.compile(r"^[ \t._．、·•+#\-－]+")
+_RANGE_MARK = frozenset("-－~～")
+_DIGIT_CHARS = frozenset("0123456789０１２３４５６７８９")
+
+
+def strip_leading_number(title: str | None) -> str:
+    """去掉书名开头的数字和紧跟着的分隔符。数字本身就是书名时返回空字符串。"""
+    text = (title or "").strip()
+    matched = _LEADING_DIGITS.match(text)
+    if not matched:
+        return ""
+    rest = text[matched.end() :]
+    if rest[:1] in _RANGE_MARK and len(rest) > 1 and rest[1] in _DIGIT_CHARS:
+        return ""
+    cleaned = _LEADING_SEPARATOR.sub("", rest).strip()
+    return cleaned
+
+
 def clean_text(value: str | None) -> str | None:
     """丢掉 MOBI 全名里的二进制控制符，保留正常书名。"""
     if not value:
