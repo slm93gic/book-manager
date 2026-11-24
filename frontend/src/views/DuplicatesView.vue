@@ -8,7 +8,7 @@
       <span class="dup-selected">已选 <strong>{{ picked.size }}</strong> 本</span>
       <button class="danger" :disabled="!picked.size" @click="removeBooks">删除所选</button>
     </div>
-    <p v-if="message" :class="error ? 'error' : 'muted'">{{ message }}</p>
+    <p v-if="message" class="notice" :class="{ error }">{{ message }}</p>
     <p v-if="!groupCount" class="empty">没有重复图书。</p>
     <article v-for="group in groups" :key="group.label + group.books[0].id" class="panel dup-group">
       <div class="dup-head">

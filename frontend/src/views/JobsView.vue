@@ -1,5 +1,5 @@
 <template>
-  <section class="page">
+  <section class="page record-page">
     <header class="page-head">
       <h1>任务</h1>
       <p v-if="total" class="stat-line"><strong>{{ total }}</strong> 个</p>
@@ -7,7 +7,7 @@
     <div class="toolbar compact">
       <button class="danger" @click="clearRecords">清空扫描记录</button>
     </div>
-    <p v-if="message" class="error">{{ message }}</p>
+    <p v-if="message" class="notice error">{{ message }}</p>
     <p v-if="!jobs.length" class="empty">没有任务。</p>
     <article v-for="job in jobs" :key="job.id" class="panel job-card" :class="{ live: live(job) }">
       <div class="panel-head">

@@ -6,7 +6,7 @@
       <label>口令</label>
       <input v-model="password" type="password" autocomplete="current-password" />
     </div>
-    <p v-if="error" class="error">{{ error }}</p>
+    <p v-if="error" class="notice error">{{ error }}</p>
     <button class="primary" type="submit">{{ setup ? "保存并进入" : "进入" }}</button>
   </form>
 </template>

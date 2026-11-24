@@ -1,4 +1,5 @@
 <template>
+  <transition name="pop">
   <div v-if="open" class="drawer-back" @click.self="$emit('close')">
     <aside class="drawer" v-if="book">
       <div class="detail-head">
@@ -36,7 +37,7 @@
             </div>
           </div>
           <p class="muted detail-note">保存时只回写改过的书名、作者、标签和丛书。没有 metadata.opf 会新建，不改电子书正文。</p>
-          <p v-if="error" class="error">{{ error }}</p>
+          <p v-if="error" class="notice error">{{ error }}</p>
           <button class="primary" @click="save">保存并锁定已改字段</button>
         </div>
       </div>
@@ -48,6 +49,7 @@
       </div>
     </aside>
   </div>
+  </transition>
 </template>
 
 <script setup lang="ts">

@@ -1,5 +1,11 @@
 <template>
-  <div v-if="bare" class="login-wrap"><router-view /></div>
+  <div v-if="bare" class="login-wrap">
+    <router-view v-slot="{ Component, route: current }">
+      <transition name="page-switch" mode="out-in" appear>
+        <component :is="Component" :key="current.path" />
+      </transition>
+    </router-view>
+  </div>
   <div v-else class="app-shell" :class="{ 'nav-collapsed': navCollapsed }">
     <aside class="nav">
       <div class="nav-head">
@@ -19,8 +25,8 @@
       <router-link to="/settings" title="设置"><span class="nav-icon">⚙️</span><span class="nav-text">设置</span></router-link>
     </aside>
     <div class="main">
-      <div v-if="active.length" class="job-banners">
-      <div v-for="job in active" :key="job.id" class="job-banner">
+      <transition-group v-if="active.length" name="banner" tag="div" class="job-banners">
+      <div v-for="job in active" :key="job.id" class="job-banner" :data-status="job.status">
         <div class="job-meter">
           <span>{{ label(job) }}</span>
           <div
@@ -36,8 +42,12 @@
         </div>
         <router-link to="/jobs">查看任务</router-link>
       </div>
-      </div>
-      <router-view />
+      </transition-group>
+      <router-view v-slot="{ Component, route: current }">
+        <transition name="page-switch" mode="out-in" appear>
+          <component :is="Component" :key="current.path" />
+        </transition>
+      </router-view>
     </div>
   </div>
 </template>

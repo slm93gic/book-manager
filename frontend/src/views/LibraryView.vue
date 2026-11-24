@@ -58,7 +58,7 @@
         </details>
       </div>
     </div>
-    <p v-if="message" :class="error ? 'error' : 'muted'">{{ message }}</p>
+    <p v-if="message" class="notice" :class="{ error }">{{ message }}</p>
     <div class="split" :class="{ solo: !unclassified && !organized }">
       <SuggestTree v-if="unclassified" :items="suggestions" :selected="suggest" @select="chooseSuggest" />
       <FolderTree v-else :key="route.path" ref="tree" :store="store" :selected-id="selectedFolder?.id ?? null" @select="choose" @drop-books="onDrop" />
@@ -176,6 +176,7 @@
       </div>
     </div>
     <BookDrawer :book-id="detailId" :store="store" @close="detailId = null" @saved="load(page)" />
+    <transition name="pop">
     <div v-if="dialog" class="modal-back" @click.self="dialog = ''">
       <div class="modal">
         <h2>{{ dialogTitle }}</h2>
@@ -209,6 +210,8 @@
         </div>
       </div>
     </div>
+    </transition>
+    <transition name="pop">
     <div v-if="categoryPanel" class="modal-back category-panel-back" @click.self="categoryPanel = false">
       <div class="modal category-panel">
         <h2>选择分类</h2>
@@ -238,6 +241,7 @@
         </div>
       </div>
     </div>
+    </transition>
   </section>
 </template>
 
