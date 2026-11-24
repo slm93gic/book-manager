@@ -27,6 +27,23 @@ def normalize_host(host: str) -> str:
     return parse_smb_location(host)[0]
 
 
+def split_share_path(text: str) -> tuple[str, str]:
+    """把「书库」或「书库/子目录」拆成共享名和子路径。"""
+    parts = [part for part in (text or "").strip().strip("/\\").replace("\\", "/").split("/") if part]
+    if not parts:
+        return "", ""
+    return parts[0], "/".join(parts[1:])
+
+
+def is_filesystem_path(text: str) -> bool:
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if raw.startswith("\\\\") or raw.startswith("/") or raw.startswith("\\"):
+        return True
+    return len(raw) > 2 and raw[1] == ":"
+
+
 def build_unc(host: str, share: str, subpath: str = "") -> str:
     host = normalize_host(host)
     share = (share or "").strip().strip("\\/")

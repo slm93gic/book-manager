@@ -379,6 +379,18 @@ def classify_destination(db: Database) -> tuple[str, str]:
     host = db.setting("smb_host").strip()
     if not host:
         return "", ""
+    if os.name != "nt":
+        mounted = "/shelf"
+        if not os.path.isdir(mounted):
+            raise ValueError("容器里找不到迁移目标目录 /shelf")
+        share = share or "books"
+        if not writable_dir(mounted):
+            raise ValueError("迁移目标目录不可写")
+        if db.setting("classify_share") != share:
+            db.set_setting("classify_share", share)
+        if db.setting("classify_root") != mounted:
+            db.set_setting("classify_root", mounted)
+        return mounted, share
     share = share or "books"
     subpath = db.setting("classify_path").strip().strip("/\\")
     from .smb import build_unc, connect_share
@@ -399,6 +411,13 @@ def classify_destination(db: Database) -> tuple[str, str]:
 
 def ensure_connected(db: Database) -> None:
     host = db.setting("smb_host").strip()
+    if not host:
+        return
+    if os.name != "nt":
+        root = db.setting("library_root").strip()
+        if root and os.path.isdir(root):
+            return
+        raise ValueError("容器里找不到书库目录，请确认 /library 已经挂载")
     username = db.setting("smb_username")
     password = db.setting("smb_password")
     if not host:
@@ -472,9 +491,27 @@ def _put_setting(conn, key: str, value: str) -> None:
     )
 
 
+def _existing_dir(path: str, label: str) -> str:
+    if not os.path.isdir(path):
+        raise ValueError(f"{label}路径不存在")
+    if not writable_dir(path):
+        raise ValueError(f"{label}目录不可写")
+    return path
+
+
+def _container_dir(explicit: str, fallback: str, label: str) -> str:
+    chosen = explicit or fallback
+    if os.path.isdir(chosen):
+        return _existing_dir(chosen, label)
+    if explicit:
+        raise ValueError(f"{label}路径不存在：{explicit}")
+    raise ValueError(f"容器里找不到{label}目录 {fallback}，请确认已经挂载")
+
+
 def save_settings(db: Database, payload: dict) -> dict:
     previous = db.setting("library_root")
     previous_classify = db.setting("classify_root")
+    previous_share = db.setting("classify_share")
     smb_host = str(payload.get("smb_host") if "smb_host" in payload else "").strip()
     smb_share = str(payload.get("smb_share") or "").strip()
     smb_path = str(payload.get("smb_path") or "").strip().strip("/\\")
@@ -483,30 +520,57 @@ def save_settings(db: Database, payload: dict) -> dict:
     classify_path = str(payload.get("classify_path") or "").strip().strip("/\\")
     smb_root = ""
     classify_root = ""
+    direct_library = ""
+    direct_classify = ""
     if smb_host:
-        from .smb import connect_and_prepare, parse_smb_location
+        from .smb import connect_and_prepare, is_filesystem_path, parse_smb_location, split_share_path
 
         parsed_host, parsed_share, parsed_path = parse_smb_location(smb_host)
         if parsed_host:
             smb_host = parsed_host
-        if parsed_share:
+        if "source_path" in payload:
+            source = str(payload.get("source_path") or "").strip()
+            if is_filesystem_path(source):
+                direct_library = source
+            else:
+                smb_share, smb_path = split_share_path(source)
+        elif parsed_share:
             smb_share = parsed_share
-        if parsed_path:
-            smb_path = parsed_path
-        parsed_classify_host, parsed_classify_share, parsed_classify_path = parse_smb_location(classify_share)
-        if parsed_classify_share:
-            classify_share = parsed_classify_share
-            if parsed_classify_path:
-                classify_path = parsed_classify_path
+            if parsed_path:
+                smb_path = parsed_path
+        if "target_path" in payload:
+            target = str(payload.get("target_path") or "").strip()
+            if is_filesystem_path(target):
+                direct_classify = target
+                if not classify_share:
+                    classify_share = previous_share.strip() or "books"
+            else:
+                classify_share, classify_path = split_share_path(target)
+        else:
+            parsed_classify_host, parsed_classify_share, parsed_classify_path = parse_smb_location(classify_share)
+            if parsed_classify_share:
+                classify_share = parsed_classify_share
+                if parsed_classify_path:
+                    classify_path = parsed_classify_path
         password = payload.get("smb_password")
         if not password:
             password = db.setting("smb_password")
-        smb_root = connect_and_prepare(smb_host, smb_share, smb_path, smb_username, password or "")
-        if classify_share:
-            classify_host = parsed_classify_host or smb_host
-            classify_root = connect_and_prepare(
-                classify_host, classify_share, classify_path, smb_username, password or ""
-            )
+        if os.name != "nt":
+            smb_root = _container_dir(direct_library, "/library", "原始数据")
+            if classify_share or direct_classify:
+                classify_root = _container_dir(direct_classify, "/shelf", "迁移目标")
+        else:
+            if direct_library:
+                smb_root = _existing_dir(direct_library, "原始数据")
+            else:
+                smb_root = connect_and_prepare(smb_host, smb_share, smb_path, smb_username, password or "")
+            if direct_classify:
+                classify_root = _existing_dir(direct_classify, "迁移目标")
+            elif classify_share:
+                classify_host = smb_host
+                classify_root = connect_and_prepare(
+                    classify_host, classify_share, classify_path, smb_username, password or ""
+                )
     with db.transaction() as conn:
         if smb_host:
             _put_setting(conn, "smb_host", smb_host)
@@ -523,28 +587,33 @@ def save_settings(db: Database, payload: dict) -> dict:
             _put_setting(conn, "classify_share", classify_share)
             _put_setting(conn, "classify_path", classify_path)
             _put_setting(conn, "classify_root", classify_root)
-        elif "library_root" in payload:
-            root = str(payload["library_root"] or "").strip()
-            if root:
-                import os
-
-                if not os.path.isdir(root):
+        elif "library_root" in payload or "classify_root" in payload:
+            root = str(payload["library_root"] if "library_root" in payload else previous).strip()
+            next_classify = str(payload["classify_root"] if "classify_root" in payload else previous_classify).strip()
+            if root or next_classify:
+                if root and not os.path.isdir(root):
                     raise ValueError("书库目录不存在")
-                if not writable_dir(root):
+                if root and not writable_dir(root):
                     raise ValueError("书库目录不可写")
-            if root != previous:
+                if next_classify and not os.path.isdir(next_classify):
+                    raise ValueError("分类目录不存在")
+                if next_classify and not writable_dir(next_classify):
+                    raise ValueError("分类目录不可写")
+            if root != previous or next_classify != previous_classify:
                 clear_index(conn)
                 _put_setting(conn, "last_scan_at", "")
             _put_setting(conn, "library_root", root)
+            _put_setting(conn, "classify_root", next_classify)
+            if "classify_share" in payload or not previous_share.strip():
+                share = str(payload.get("classify_share") or "books").strip() or "books"
+                _put_setting(conn, "classify_share", share)
             if "smb_host" in payload:
                 _put_setting(conn, "smb_host", "")
                 _put_setting(conn, "smb_share", "")
                 _put_setting(conn, "smb_path", "")
                 _put_setting(conn, "smb_username", "")
                 _put_setting(conn, "smb_password", "")
-                _put_setting(conn, "classify_share", "")
                 _put_setting(conn, "classify_path", "")
-                _put_setting(conn, "classify_root", "")
         for key, field in (
             ("extensions", "extensions"),
             ("excludes", "excludes"),

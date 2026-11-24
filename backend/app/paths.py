@@ -303,14 +303,21 @@ def _server_side_move(src: str, dst: str) -> None:
 
 
 def relocate_directory(src: str, dst: str) -> None:
-    """同一共享内直接改名。同一台 NAS 的两个共享只在服务器上复制后再删除源目录。"""
+    """同一目录内直接改名。跨挂载点时在本机复制后再删除源目录。"""
     try:
         os.rename(src, dst)
         return
     except OSError as exc:
-        if io_kind(exc) != "跨文件系统" or not same_unc_server(src, dst):
+        if io_kind(exc) != "跨文件系统" or not _can_copy_across(src, dst):
             raise
     _server_side_move(src, dst)
+
+
+def _can_copy_across(src: str, dst: str) -> bool:
+    """同一台 NAS 的两个共享可以复制。Windows 只接受同一主机的 UNC，避免经另一台电脑中转。"""
+    if same_unc_server(src, dst):
+        return True
+    return os.name != "nt" and not unc_host(src) and not unc_host(dst)
 
 
 def io_kind(exc: OSError) -> str:

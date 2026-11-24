@@ -223,6 +223,7 @@
             type="button"
             class="category-card"
             :class="{ on: dialogValue === folder.relative_path }"
+            :style="{ background: categoryFill(folder.relative_path) }"
             :data-path="folder.relative_path"
             role="option"
             :aria-selected="dialogValue === folder.relative_path"
@@ -615,6 +616,77 @@ async function askMove() {
   categories.value = data.items;
   dialogValue.value = folderForSuggestion(hint, data.items);
   categoryPanel.value = false;
+}
+
+const warmTones = [
+  { hue: 8, sat: 74, light: 46 },
+  { hue: 18, sat: 78, light: 42 },
+  { hue: 28, sat: 76, light: 38 },
+  { hue: 36, sat: 80, light: 34 },
+  { hue: 348, sat: 70, light: 46 },
+  { hue: 336, sat: 68, light: 44 },
+];
+const coolTones = [
+  { hue: 152, sat: 58, light: 32 },
+  { hue: 168, sat: 70, light: 30 },
+  { hue: 188, sat: 78, light: 30 },
+  { hue: 204, sat: 74, light: 40 },
+  { hue: 222, sat: 72, light: 46 },
+  { hue: 262, sat: 64, light: 46 },
+];
+
+function categoryPaint(tone: { hue: number; sat: number; light: number }, top: number) {
+  const bottom = Math.max(22, Math.round(top - 8));
+  const deep = Math.min(88, tone.sat + 8);
+  return `linear-gradient(165deg, hsl(${tone.hue} ${tone.sat}% ${Math.round(top)}%), hsl(${tone.hue} ${deep}% ${bottom}%))`;
+}
+
+const categoryFills = computed(() => {
+  const fills = new Map<string, string>();
+  const groups = new Map<string, string[]>();
+  for (const folder of categories.value) {
+    const name = folder.name || "";
+    const mark = name.indexOf("_");
+    if (mark <= 0) continue;
+    const key = name.slice(0, mark);
+    const paths = groups.get(key) || [];
+    paths.push(folder.relative_path);
+    groups.set(key, paths);
+  }
+  const toneOf = new Map<string, { hue: number; sat: number; light: number }>();
+  let warmCount = 0;
+  let coolCount = 0;
+  let wantWarm = false;
+  const takeTone = () => {
+    const tone = wantWarm ? warmTones[warmCount++ % warmTones.length] : coolTones[coolCount++ % coolTones.length];
+    wantWarm = !wantWarm;
+    return tone;
+  };
+  for (const folder of categories.value) {
+    const name = folder.name || "";
+    const mark = name.indexOf("_");
+    const id = mark > 0 ? `g:${name.slice(0, mark)}` : `p:${folder.relative_path}`;
+    if (!toneOf.has(id)) toneOf.set(id, takeTone());
+  }
+  for (const folder of categories.value) {
+    const name = folder.name || "";
+    if (name.indexOf("_") > 0) continue;
+    const tone = toneOf.get(`p:${folder.relative_path}`) || coolTones[0];
+    fills.set(folder.relative_path, categoryPaint(tone, tone.light));
+  }
+  for (const [key, paths] of groups) {
+    const tone = toneOf.get(`g:${key}`) || warmTones[0];
+    const floor = Math.max(24, tone.light - 12);
+    paths.forEach((path, index) => {
+      const step = paths.length <= 1 ? 0 : index / (paths.length - 1);
+      fills.set(path, categoryPaint(tone, tone.light - step * (tone.light - floor)));
+    });
+  }
+  return fills;
+});
+
+function categoryFill(path: string) {
+  return categoryFills.value.get(path) || categoryPaint(coolTones[4], 46);
 }
 
 function openCategoryPanel() {

@@ -1,40 +1,76 @@
 <template>
-  <section class="page">
+  <section class="page settings-page">
     <header class="page-head">
       <h1>设置</h1>
       <p v-if="status" class="stat-line"><strong>{{ status.book_count }}</strong> 本<span></span><strong>{{ status.folder_count }}</strong> 个目录</p>
     </header>
-    <form class="panel sheet" @submit.prevent="save">
-      <div class="panel-head"><h2>书库连接</h2></div>
-      <div class="sheet-body">
-      <label class="field">原始目录<input v-model="form.smb_host" placeholder="smb://192.168.31.88/书库/" @change="applySmbAddress" /></label>
-      <label class="field">共享名<input v-model="form.smb_share" placeholder="粘贴完整地址时自动填入，例如 书库" /></label>
-      <label class="field">共享内子路径<input v-model="form.smb_path" placeholder="可选" /></label>
-      <label class="field">分类目录<input v-model="form.classify_target" placeholder="smb://192.168.31.88/books/" @change="applyClassifyAddress" /></label>
-      <label class="field">账户<input v-model="form.smb_username" placeholder="Samba 用户名" /></label>
-      <label class="field">密码<input v-model="form.smb_password" type="password" :placeholder="status?.smb_password_set ? '已保存，留空则不修改' : 'SMB 密码'" /></label>
-      <label class="field">本机路径（不使用 SMB 时填写）<input v-model="form.library_root" placeholder="例如 D:\Books 或 Z:\Books" /></label>
+    <p v-if="message" class="settings-toast" :class="{ error }">{{ message }}</p>
+    <form class="settings-form" @submit.prevent="save">
+      <div class="panel sheet">
+        <div class="panel-head">
+          <h2>NAS</h2>
+          <span v-if="status" class="status-pill" :data-status="status.readable ? 'running' : 'failed'">{{ status.readable ? "已连接" : "未连接" }}</span>
+        </div>
+        <div class="sheet-body">
+          <div v-if="status" class="route-board">
+            <article class="route-card">
+              <span>原始数据</span>
+              <strong>{{ status.root_display || "未连接" }}</strong>
+            </article>
+            <div class="route-join" aria-hidden="true"></div>
+            <article class="route-card dest">
+              <span>迁移目标</span>
+              <strong>{{ status.classify_display || "未设置" }}</strong>
+            </article>
+          </div>
+          <div v-if="status" class="route-flags">
+            <em :data-on="status.readable">{{ status.readable ? "可读" : "不可读" }}</em>
+            <em :data-on="status.writable">{{ status.writable ? "可写" : "不可写" }}</em>
+            <em data-on="true">上次扫描 {{ scanWhen(status.last_scan_at) }}</em>
+          </div>
+          <p class="settings-kicker">连接</p>
+          <label class="field">SMB 基本地址<span class="field-hint">只填 NAS 地址，例如 smb://192.168.31.88</span><input v-model="form.smb_host" placeholder="smb://192.168.31.88" /></label>
+          <div class="field-pair">
+            <label class="field">账户<input v-model="form.smb_username" placeholder="Samba 用户名" autocomplete="username" /></label>
+            <label class="field">密码<input v-model="form.smb_password" type="password" autocomplete="current-password" :placeholder="status?.smb_password_set ? '已保存，留空则不修改' : 'SMB 密码'" /></label>
+          </div>
+          <p class="settings-kicker">路径</p>
+          <div class="field-pair">
+            <label class="field">原始数据路径<span class="field-hint">共享名，例如 书库。容器里对应 /library</span><input v-model="form.source_path" placeholder="书库" /></label>
+            <label class="field">迁移目标路径<span class="field-hint">共享名，例如 books。容器里对应 /shelf</span><input v-model="form.target_path" placeholder="books" /></label>
+          </div>
+          <p class="settings-note">路径和现在一样时，保存不会清空扫描记录。路径一旦改掉，索引会清空，需要重新扫描。</p>
+        </div>
       </div>
-      <div class="panel-head"><h2>索引</h2></div>
-      <div class="sheet-body">
-      <label class="field">识别扩展名，一行一个<textarea v-model="form.extensions" /></label>
-      <label class="field">排除目录，一行一个<textarea v-model="form.excludes" /></label>
-      <label class="field">只索引这些路径（可空）<textarea v-model="form.includes" /></label>
-      <label class="field">收件箱路径，其中的书始终算未分类<textarea v-model="form.inbox" /></label>
-      <label class="field">解析并发<input v-model.number="form.concurrency" type="number" min="1" max="16" /></label>
-      <label class="field">批量确认阈值<input v-model.number="form.batch_threshold" type="number" min="1" /></label>
-      <p class="muted" v-if="status">当前路径 {{ status.root_display || "未连接" }} · 图书 {{ status.book_count }} · 目录 {{ status.folder_count }} · 上次扫描 {{ status.last_scan_at || "还没有" }}</p>
-      <p class="muted" v-if="status">索引 {{ status.db_path }} · {{ status.readable ? "可读" : "不可读" }} · {{ status.writable ? "可写" : "不可写" }}</p>
-      <p v-if="message" :class="error ? 'error' : 'muted'">{{ message }}</p>
-      <button class="primary" type="submit">保存</button>
+      <div class="panel sheet">
+        <div class="panel-head"><h2>扫描</h2></div>
+        <div class="sheet-body">
+          <div class="settings-scan">
+            <label class="field">识别扩展名<span class="field-hint">一行一个</span><textarea v-model="form.extensions" rows="4" /></label>
+            <label class="field">排除目录<span class="field-hint">一行一个，这些目录不进入索引</span><textarea v-model="form.excludes" rows="4" /></label>
+            <label class="field">只索引这些路径<span class="field-hint">一行一个，留空表示整库</span><textarea v-model="form.includes" rows="3" /></label>
+            <label class="field">收件箱<span class="field-hint">一行一个。这里面的书始终算未分类</span><textarea v-model="form.inbox" rows="3" /></label>
+          </div>
+          <div class="field-pair settings-numbers">
+            <label class="field">解析并发<input v-model.number="form.concurrency" type="number" min="1" max="16" /></label>
+            <label class="field">批量确认阈值<input v-model.number="form.batch_threshold" type="number" min="1" /></label>
+          </div>
+          <div class="settings-actions">
+            <button class="primary" type="submit">保存</button>
+          </div>
+        </div>
       </div>
     </form>
     <form class="panel sheet" @submit.prevent="changePassword">
       <div class="panel-head"><h2>更换口令</h2></div>
       <div class="sheet-body">
-      <label class="field">原口令<input v-model="oldPassword" type="password" /></label>
-      <label class="field">新口令<input v-model="password" type="password" /></label>
-      <button class="ghost" type="submit">更新口令</button>
+        <div class="field-pair">
+          <label class="field">原口令<input v-model="oldPassword" type="password" /></label>
+          <label class="field">新口令<input v-model="password" type="password" /></label>
+        </div>
+        <div class="settings-actions">
+          <button class="ghost" type="submit">更新口令</button>
+        </div>
       </div>
     </form>
   </section>
@@ -46,14 +82,10 @@ import { api, ApiError } from "../api";
 
 const form = reactive({
   smb_host: "",
-  smb_share: "",
-  smb_path: "",
-  classify_target: "",
-  classify_share: "",
-  classify_path: "",
   smb_username: "",
   smb_password: "",
-  library_root: "",
+  source_path: "",
+  target_path: "",
   extensions: "",
   excludes: "",
   includes: "",
@@ -71,20 +103,26 @@ function lines(value: string[]) {
   return (value || []).join("\n");
 }
 
+function scanWhen(value: string) {
+  if (!value) return "还没有";
+  return value.replace("T", " ").slice(0, 16);
+}
+
+function joinPath(share: string, subpath: string) {
+  const name = (share || "").trim();
+  const extra = (subpath || "").trim().replace(/^[/\\]+/, "");
+  if (!name) return "";
+  return extra ? `${name}/${extra}` : name;
+}
+
 async function load() {
   const data = await api<any>("/api/settings");
   status.value = data;
-  form.library_root = data.root_display || data.library_root || "";
-  form.smb_host = data.smb_host || "";
-  form.smb_share = data.smb_share || "";
-  form.smb_path = data.smb_path || "";
+  form.smb_host = data.smb_host ? `smb://${data.smb_host}` : "";
   form.smb_username = data.smb_username || "";
   form.smb_password = "";
-  form.classify_share = data.classify_share || "";
-  form.classify_path = data.classify_path || "";
-  form.classify_target = data.classify_share
-    ? `smb://${data.smb_host || ""}/${data.classify_share}${data.classify_path ? "/" + data.classify_path : ""}/`
-    : "";
+  form.source_path = joinPath(data.smb_share, data.smb_path);
+  form.target_path = joinPath(data.classify_share, data.classify_path);
   form.extensions = lines(data.extensions);
   form.excludes = lines(data.excludes);
   form.includes = lines(data.includes);
@@ -93,51 +131,17 @@ async function load() {
   form.batch_threshold = data.batch_threshold;
 }
 
-function applySmbAddress() {
-  const raw = form.smb_host.trim();
-  if (!raw.includes("://") && !raw.includes("/") && !raw.includes("\\")) return;
-  const text = raw.replace(/^[a-z]+:\/\//i, "").replace(/^[/\\]+/, "");
-  const parts = text.split(/[/\\]+/).filter(Boolean);
-  form.smb_host = parts[0] || "";
-  if (parts[1]) form.smb_share = parts[1];
-  if (parts.length > 2) form.smb_path = parts.slice(2).join("/");
-}
-
-function applyClassifyAddress() {
-  const raw = form.classify_target.trim();
-  if (!raw) {
-    form.classify_share = "";
-    form.classify_path = "";
-    return;
-  }
-  if (!raw.includes("://") && !raw.includes("/") && !raw.includes("\\")) {
-    form.classify_share = raw;
-    form.classify_path = "";
-    return;
-  }
-  const text = raw.replace(/^[a-z]+:\/\//i, "").replace(/^[/\\]+/, "");
-  const parts = text.split(/[/\\]+/).filter(Boolean);
-  const hostLike = parts.length >= 2 && (raw.includes("://") || parts[0].includes(".") || parts[0] === form.smb_host);
-  form.classify_share = hostLike ? parts[1] : parts[0];
-  form.classify_path = parts.slice(hostLike ? 2 : 1).join("/");
-}
-
 async function save() {
   error.value = false;
-  applySmbAddress();
-  applyClassifyAddress();
   try {
     status.value = await api("/api/settings", {
       method: "PUT",
       body: JSON.stringify({
-        smb_host: form.smb_host,
-        smb_share: form.smb_share,
-        smb_path: form.smb_path,
-        smb_username: form.smb_username,
+        smb_host: form.smb_host.trim(),
+        smb_username: form.smb_username.trim(),
         smb_password: form.smb_password,
-        classify_share: form.classify_share,
-        classify_path: form.classify_path,
-        library_root: form.smb_host ? "" : form.library_root,
+        source_path: form.source_path.trim(),
+        target_path: form.target_path.trim(),
         extensions: form.extensions,
         excludes: form.excludes,
         includes: form.includes,
@@ -146,8 +150,11 @@ async function save() {
         batch_threshold: form.batch_threshold,
       }),
     });
-    message.value = form.smb_host ? "已连接并保存" : "已保存";
+    message.value = "已保存";
     form.smb_password = "";
+    form.smb_host = status.value.smb_host ? `smb://${status.value.smb_host}` : form.smb_host;
+    form.source_path = joinPath(status.value.smb_share, status.value.smb_path);
+    form.target_path = joinPath(status.value.classify_share, status.value.classify_path);
   } catch (err) {
     message.value = err instanceof ApiError ? err.message : "保存失败";
     error.value = true;

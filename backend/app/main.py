@@ -590,6 +590,8 @@ class SettingsBody(BaseModel):
     smb_password: str | None = None
     classify_share: str | None = None
     classify_path: str | None = None
+    source_path: str | None = None
+    target_path: str | None = None
     extensions: list[str] | str | None = None
     excludes: list[str] | str | None = None
     includes: list[str] | str | None = None
