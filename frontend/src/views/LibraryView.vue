@@ -101,10 +101,10 @@
               <span v-else class="cover placeholder">无封面</span>
               <span class="lib-meta">
                 <span class="lib-name">
-                  <button class="book-title" :class="{ bad: book.title_issue }" :title="book.title || '未命名'" @click.stop="detailId = book.id">{{ book.title || "未命名" }}</button>
+                  <button class="book-title" :class="{ bad: book.title_issue === 'brackets' }" :title="book.title || '未命名'" @click.stop="detailId = book.id">{{ book.title || "未命名" }}</button>
                   <span v-if="book.name_conflict" class="mark">同名</span>
-                  <span v-if="book.title_issue" class="mark bad">{{ book.title_issue === "pinyin" ? "拼音" : "《》" }}</span>
-                  <button v-if="book.title_issue" type="button" class="rename-one" @click.stop="renameMarked([book])">重命名</button>
+                  <span v-if="book.title_issue === 'brackets'" class="mark bad">《》</span>
+                  <button v-if="book.title_issue === 'brackets'" type="button" class="rename-one" @click.stop="renameMarked([book])">重命名</button>
                 </span>
                 <span v-if="unclassified && book.suggested_category" class="suggest">推荐 {{ book.suggested_category }}</span>
                 <span class="dup-series" v-if="book.series">{{ book.series }} #{{ book.series_index }}</span>
