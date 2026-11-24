@@ -13,7 +13,7 @@
       <button class="danger" :disabled="!picked.size" @click="removeBooks">删除所选</button>
     </div>
     <p v-if="message" :class="error ? 'error' : 'muted'">{{ message }}</p>
-    <p v-if="!groups.length" class="empty">没有重复图书。</p>
+    <p v-if="!groupCount" class="empty">没有重复图书。</p>
     <article v-for="group in groups" :key="group.label + group.books[0].id" class="panel dup-group">
       <div class="dup-head">
         <h2>{{ group.label }} <span class="muted">{{ group.count }} 本</span></h2>
@@ -50,6 +50,11 @@
         </article>
       </div>
     </article>
+    <div v-if="groupCount" class="pager">
+      <button class="ghost" :disabled="page <= 1" @click="load(page - 1)">上一页</button>
+      <span>第 {{ page }} 页 / 共 {{ groupCount }} 组</span>
+      <button class="ghost" :disabled="page * pageSize >= groupCount" @click="load(page + 1)">下一页</button>
+    </div>
     <BookDrawer :book-id="detailId" :store="store" @close="detailId = null" @saved="load" />
   </section>
 </template>
@@ -65,6 +70,8 @@ const store = computed(() => (organized.value ? "shelf" : "library"));
 const groups = ref<{ label: string; count: number; books: DuplicateBook[] }[]>([]);
 const groupCount = ref(0);
 const bookCount = ref(0);
+const page = ref(1);
+const pageSize = 10;
 const picked = ref(new Set<number>());
 const hiddenCovers = reactive<Record<number, boolean>>({});
 const detailId = ref<number | null>(null);
@@ -151,17 +158,31 @@ function toggle(id: number) {
   picked.value = next;
 }
 
-async function load() {
-  const data = await api<{ groups: typeof groups.value; group_count: number; book_count: number }>(
-    `/api/books/duplicates?store=${store.value}`,
+async function load(next = page.value) {
+  const wanted = Math.max(1, next);
+  const data = await api<{ groups: typeof groups.value; group_count: number; book_count: number; page: number }>(
+    `/api/books/duplicates?store=${store.value}&page=${wanted}&page_size=${pageSize}`,
   );
+  const pages = Math.max(1, Math.ceil(data.group_count / pageSize));
+  if (wanted > pages) {
+    await load(pages);
+    return;
+  }
   groups.value = data.groups.map((group) => ({
     ...group,
     books: [...group.books].sort(bySize),
   }));
   groupCount.value = data.group_count;
   bookCount.value = data.book_count;
+  page.value = data.page || wanted;
   selectDefaultCopies(groups.value);
+  groups.value = groups.value.map((group) => ({
+    ...group,
+    books: [
+      ...group.books.filter((book) => !picked.value.has(book.id)),
+      ...group.books.filter((book) => picked.value.has(book.id)),
+    ],
+  }));
 }
 
 async function ignoreGroup(group: { label: string; books: DuplicateBook[] }) {
@@ -223,7 +244,8 @@ async function removeBooks() {
 watch(organized, () => {
   picked.value = new Set();
   message.value = "";
-  load();
+  page.value = 1;
+  load(1);
 });
 
 onMounted(load);

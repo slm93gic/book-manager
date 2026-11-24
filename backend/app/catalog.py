@@ -989,7 +989,7 @@ def _norm_isbn(value: str) -> str:
     return "".join(ch for ch in (value or "").upper() if ch.isalnum())
 
 
-def list_duplicates(db: Database) -> dict:
+def list_duplicates(db: Database, page: int | None = None, page_size: int | None = None) -> dict:
     """书名相同，或 ISBN 相同，合成一组。丛书序号或上下册不同的分开。"""
     with db.transaction() as conn:
         rows = conn.execute(
@@ -1066,10 +1066,24 @@ def list_duplicates(db: Database) -> dict:
                 }
             )
     groups.sort(key=lambda item: (-item["count"], item["label"].casefold()))
+    total_groups = len(groups)
+    book_count = sum(item["count"] for item in groups)
+    if page_size is None:
+        shown = groups
+        current = 1
+        size = total_groups
+    else:
+        size = max(1, min(int(page_size), 100))
+        pages = max(1, (total_groups + size - 1) // size)
+        current = min(max(1, int(page or 1)), pages)
+        start = (current - 1) * size
+        shown = groups[start : start + size]
     return {
-        "groups": groups,
-        "group_count": len(groups),
-        "book_count": sum(item["count"] for item in groups),
+        "groups": shown,
+        "group_count": total_groups,
+        "book_count": book_count,
+        "page": current,
+        "page_size": size,
     }
 
 

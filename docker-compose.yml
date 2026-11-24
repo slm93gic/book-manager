@@ -1,0 +1,12 @@
+services:
+  book-manager:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      BOOK_MANAGER_DATA: /data
+    volumes:
+      - /volume2/docker/book-manager/data:/data
+      - /volume2/书库:/library
+      - /volume2/books:/shelf
+    restart: unless-stopped

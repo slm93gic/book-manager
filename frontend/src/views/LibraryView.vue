@@ -198,12 +198,12 @@
         </template>
         <template v-else-if="dialog === 'move'">
           <label class="field">已有分类
-            <select v-model="dialogValue">
-              <option value="">请选择</option>
-              <option v-for="folder in categories" :key="folder.id" :value="folder.relative_path">{{ folder.name }}</option>
-            </select>
+            <button type="button" class="category-trigger" @click="openCategoryPanel">
+              {{ chosenCategoryName && !newCategory.trim() ? chosenCategoryName : "请选择" }}
+            </button>
           </label>
           <label class="field">或在 {{ categoryShare || "书库" }} 下新建并移入<input v-model="newCategory" placeholder="例如 小说" /></label>
+          <p v-if="newCategory.trim()" class="muted">将新建「{{ newCategory.trim() }}」并移入。</p>
         </template>
         <input v-else v-model="dialogValue" placeholder="分类名称，例如 小说" />
         <p v-if="dialog === 'move' && moveIds.length > threshold">数量超过 {{ threshold }}，确认后才会移动。</p>
@@ -213,11 +213,39 @@
         </div>
       </div>
     </div>
+    <div v-if="categoryPanel" class="modal-back category-panel-back" @click.self="categoryPanel = false">
+      <div class="modal category-panel">
+        <h2>选择分类</h2>
+        <label class="field">
+          <input v-model="categoryQuery" placeholder="搜索分类，例如 小说" />
+          <span class="muted">{{ categoryHint }}</span>
+        </label>
+        <div ref="categoryList" class="category-cards" role="listbox">
+          <button
+            v-for="folder in filteredCategories"
+            :key="folder.id"
+            type="button"
+            class="category-card"
+            :class="{ on: dialogValue === folder.relative_path }"
+            :data-path="folder.relative_path"
+            role="option"
+            :aria-selected="dialogValue === folder.relative_path"
+            @click="chooseCategory(folder.relative_path)"
+          >
+            <span>{{ folder.name }}</span>
+          </button>
+          <p v-if="!filteredCategories.length" class="muted">没有匹配的分类</p>
+        </div>
+        <div class="row" style="margin-top: 12px">
+          <button class="ghost" type="button" @click="categoryPanel = false">关闭</button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import BookDrawer from "../components/BookDrawer.vue";
 import FolderTree from "../components/FolderTree.vue";
@@ -283,6 +311,25 @@ const dialogTitle = ref("");
 const dialogValue = ref("");
 const newCategory = ref("");
 const categories = ref<FolderNode[]>([]);
+const categoryQuery = ref("");
+const categoryPanel = ref(false);
+const categoryList = ref<HTMLElement | null>(null);
+const filteredCategories = computed(() => {
+  const query = categoryQuery.value.trim().toLowerCase();
+  if (!query) return categories.value;
+  return categories.value.filter((folder) =>
+    folder.name.toLowerCase().includes(query) || folder.relative_path.toLowerCase().includes(query),
+  );
+});
+const categoryHint = computed(() => {
+  const totalCount = categories.value.length;
+  const shown = filteredCategories.value.length;
+  if (!categoryQuery.value.trim()) return `共 ${totalCount} 个`;
+  return `找到 ${shown} 个 / 共 ${totalCount} 个`;
+});
+const chosenCategoryName = computed(
+  () => categories.value.find((folder) => folder.relative_path === dialogValue.value)?.name || "",
+);
 const classifyShare = ref("");
 const smbHost = ref("");
 const categoryShare = computed(() => classifyShare.value || (smbHost.value ? "books" : ""));
@@ -296,7 +343,13 @@ watch(() => route.path, () => {
   selectedFolder.value = null;
   picked.value = new Set();
   suggest.value = "";
+  dialog.value = "";
+  categoryPanel.value = false;
   load(1);
+});
+
+watch(dialog, (value) => {
+  if (value !== "move") categoryPanel.value = false;
 });
 
 watch([pageChecked, pagePartial, books], () => {
@@ -359,11 +412,16 @@ async function load(next = page.value) {
   if (unclassified.value) suggestions.value = data.suggestions || [];
   listingQuery.value = q.value.trim();
   listingSuggest.value = unclassified.value ? suggest.value : "";
-  const selected = new Set(picked.value);
+  const refreshSelection = unclassified.value || organized.value;
+  const selected = refreshSelection ? new Set<number>() : new Set(picked.value);
   for (const book of data.items) {
     if (!hasFormat(book.primary_format)) selected.add(book.id);
   }
   picked.value = selected;
+  if (refreshSelection) {
+    moveIds.value = [];
+    if (dialog.value === "move") dialog.value = "";
+  }
 }
 
 function selectPage() {
@@ -551,10 +609,34 @@ async function askMove() {
   const hint = suggestedTarget();
   dialogValue.value = "";
   newCategory.value = "";
+  categoryQuery.value = "";
   moveIds.value = [...picked.value];
   const data = await api<{ items: FolderNode[] }>("/api/folders?store=shelf");
   categories.value = data.items;
   dialogValue.value = folderForSuggestion(hint, data.items);
+  categoryPanel.value = false;
+}
+
+function openCategoryPanel() {
+  categoryQuery.value = "";
+  categoryPanel.value = true;
+  scrollChosenCategory();
+}
+
+function chooseCategory(path: string) {
+  dialogValue.value = path;
+  newCategory.value = "";
+  categoryPanel.value = false;
+}
+
+function scrollChosenCategory() {
+  nextTick(() => {
+    const root = categoryList.value;
+    const chosen = dialogValue.value;
+    if (!root || !chosen) return;
+    const hit = [...root.querySelectorAll<HTMLButtonElement>(".category-option")].find((node) => node.dataset.path === chosen);
+    hit?.scrollIntoView({ block: "nearest" });
+  });
 }
 
 function folderForSuggestion(suggestion: string, folders: FolderNode[]) {
@@ -644,11 +726,13 @@ async function move(ids: number[], target: string, confirmed = false) {
     if (err instanceof ApiError && err.status === 409 && (err.detail as { need_confirm?: boolean })?.need_confirm) {
       const data = await api<{ items: FolderNode[] }>("/api/folders?store=shelf");
       categories.value = data.items;
+      categoryQuery.value = "";
       dialog.value = "move";
       dialogTitle.value = "确认批量移动";
       dialogValue.value = target;
       newCategory.value = "";
       moveIds.value = ids;
+      scrollChosenCategory();
       return;
     }
     message.value = err instanceof ApiError ? err.message : "移动失败";

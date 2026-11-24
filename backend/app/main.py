@@ -53,6 +53,8 @@ class Core:
         data_dir.mkdir(parents=True, exist_ok=True)
         self.db = Database(data_dir / "book.db")
         self.shelf = Database(data_dir / "shelf.db")
+        if not self.db.setting("password_hash"):
+            _store_password(self.db, "123456")
         sync_shelf(self.db, self.shelf)
         split_mixed_index(self.db, self.shelf)
         self.jobs = JobManager(self.db, self.shelf)
@@ -265,8 +267,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         return facets(active_db(request), args)
 
     @app.get("/api/books/duplicates")
-    def book_duplicates(request: Request):
-        return list_duplicates(active_db(request))
+    def book_duplicates(request: Request, page: int = 1, page_size: int = 10):
+        return list_duplicates(active_db(request), page=page, page_size=page_size)
 
     @app.post("/api/books/duplicates/ignore")
     def ignore_duplicates(body: DeleteBooksBody, request: Request):
