@@ -1,0 +1,11 @@
+data
+nas-data
+**/*.db
+**/*.db-*
+**/*.db.bak
+frontend/node_modules
+frontend/dist
+backend/.venv
+**/__pycache__
+**/.pytest_cache
+.git

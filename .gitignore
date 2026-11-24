@@ -1,0 +1,11 @@
+data/
+nas-data/
+frontend/node_modules/
+frontend/dist/
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.db.bak
+*.db-wal
+*.db-shm
