@@ -1,19 +1,22 @@
 <template>
   <div v-if="bare" class="login-wrap"><router-view /></div>
-  <div v-else class="app-shell">
+  <div v-else class="app-shell" :class="{ 'nav-collapsed': navCollapsed }">
     <aside class="nav">
-      <p class="brand"><span class="brand-mark">书</span>图书分类</p>
+      <div class="nav-head">
+        <p class="brand"><span class="brand-mark">书</span><span class="brand-name">图书分类</span></p>
+        <button type="button" class="nav-collapse" :title="navCollapsed ? '展开菜单' : '收起菜单'" @click="navCollapsed = !navCollapsed">{{ navCollapsed ? "›" : "‹" }}</button>
+      </div>
       <p class="nav-label">浏览</p>
-      <router-link to="/unclassified"><span class="nav-icon">📚</span>未分类</router-link>
-      <router-link to="/classified"><span class="nav-icon">📗</span>已整理</router-link>
+      <router-link to="/unclassified" title="未分类"><span class="nav-icon">📚</span><span class="nav-text">未分类</span></router-link>
+      <router-link to="/classified" title="已整理"><span class="nav-icon">📗</span><span class="nav-text">已整理</span></router-link>
       <p class="nav-label">整理</p>
-      <router-link to="/duplicates/unclassified"><span class="nav-icon">🔁</span>未分类重复</router-link>
-      <router-link to="/duplicates/classified"><span class="nav-icon">📑</span>已整理重复</router-link>
+      <router-link to="/duplicates/unclassified" title="未分类重复"><span class="nav-icon">🔁</span><span class="nav-text">未分类重复</span></router-link>
+      <router-link to="/duplicates/classified" title="已整理重复"><span class="nav-icon">📑</span><span class="nav-text">已整理重复</span></router-link>
       <p class="nav-label">记录</p>
-      <router-link to="/jobs"><span class="nav-icon">📋</span>任务</router-link>
-      <router-link to="/log"><span class="nav-icon">📝</span>操作日志</router-link>
+      <router-link to="/jobs" title="任务"><span class="nav-icon">📋</span><span class="nav-text">任务</span></router-link>
+      <router-link to="/log" title="操作日志"><span class="nav-icon">📝</span><span class="nav-text">操作日志</span></router-link>
       <div class="nav-spacer"></div>
-      <router-link to="/settings"><span class="nav-icon">⚙️</span>设置</router-link>
+      <router-link to="/settings" title="设置"><span class="nav-icon">⚙️</span><span class="nav-text">设置</span></router-link>
     </aside>
     <div class="main">
       <div v-if="active.length" class="job-banners">
@@ -40,13 +43,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api, type Job } from "./api";
 
 const route = useRoute();
 const router = useRouter();
 const bare = computed(() => route.path === "/login");
+const navCollapsed = ref(localStorage.getItem("bm_nav_collapsed") === "1");
+watch(navCollapsed, (value) => localStorage.setItem("bm_nav_collapsed", value ? "1" : "0"));
 const active = ref<Job[]>([]);
 let timer = 0;
 let source: EventSource | null = null;

@@ -6,10 +6,6 @@
     <div class="toolbar" :class="{ compact: unclassified || organized }">
       <div class="toolbar-search">
         <input class="search" v-model="q" :placeholder="searchPlaceholder" @keyup.enter="load(1)" />
-        <select v-if="unclassified" v-model="suggest" aria-label="推荐分类" @change="load(1)">
-          <option value="">推荐分类</option>
-          <option v-for="item in suggestions" :key="item.name" :value="item.name">{{ item.name }}（{{ item.count }}）</option>
-        </select>
         <select v-model="sort" aria-label="排序" @change="changeSort">
           <option value="name">文件名</option>
           <option value="title">书名</option>
@@ -40,7 +36,6 @@
       <div v-else class="toolbar-actions">
         <button class="primary" :disabled="!picked.size" @click="askMove">移动到…{{ picked.size ? `（${picked.size}）` : "" }}</button>
         <button class="danger" :disabled="!picked.size" @click="removeBooks">删除所选</button>
-        <button class="danger" :disabled="!picked.size" @click="renamePicked">重命名标记</button>
         <span class="muted picked-count">已选 {{ picked.size }} / {{ total }} 本</span>
         <details ref="moreBox" class="more">
           <summary class="ghost">更多</summary>
@@ -56,6 +51,7 @@
             <button class="ghost" :disabled="!picked.size" @click="runMore(clearPicked)">取消选择</button>
             <button class="ghost" :disabled="!picked.size" @click="runMore(askTags)">修改标签</button>
             <button class="ghost" :disabled="!picked.size" @click="runMore(writeTags)">回写标签</button>
+            <button class="danger" :disabled="!picked.size" @click="runMore(renamePicked)">重命名标记</button>
             <button class="ghost" @click="runMore(scan)">扫描书库</button>
             <button class="danger" @click="runMore(clearRecords)">清空扫描记录</button>
           </div>
@@ -63,8 +59,9 @@
       </div>
     </div>
     <p v-if="message" :class="error ? 'error' : 'muted'">{{ message }}</p>
-    <div class="split" :class="{ solo: unclassified }">
-      <FolderTree v-if="!unclassified" :key="route.path" ref="tree" :store="store" :selected-id="selectedFolder?.id ?? null" @select="choose" @drop-books="onDrop" />
+    <div class="split" :class="{ solo: !unclassified && !organized }">
+      <SuggestTree v-if="unclassified" :items="suggestions" :selected="suggest" @select="chooseSuggest" />
+      <FolderTree v-else :key="route.path" ref="tree" :store="store" :selected-id="selectedFolder?.id ?? null" @select="choose" @drop-books="onDrop" />
       <div class="panel list">
         <div v-if="!(unclassified || organized)" class="row list-tools">
           <span class="muted">已选 {{ picked.size }} / {{ total }} 本</span>
@@ -78,44 +75,42 @@
           <div class="lib-select">
             <label class="check"><input ref="pageBox" type="checkbox" title="全选本页" :checked="pageChecked" @change="togglePage" /> 全选本页</label>
           </div>
-          <div class="lib-cards">
+          <div class="lib-cards poster-cards">
             <article
               v-for="book in books"
               :key="book.id"
-              class="lib-card"
+              class="poster-card"
               :class="{ picked: picked.has(book.id), conflict: book.name_conflict, pending: !hasFormat(book.primary_format) }"
               draggable="true"
               @dragstart="drag($event, book.id)"
               @click="toggle(book.id)"
             >
-              <input type="checkbox" :checked="picked.has(book.id)" @click.stop @change="toggle(book.id)" />
-              <img
-                v-if="!hiddenCovers[book.id]"
-                class="cover"
-                :src="`/api/covers/${book.id}?store=${store}`"
-                alt=""
-                draggable="false"
-                loading="lazy"
-                @error="hiddenCovers[book.id] = true"
-              />
-              <span v-else class="cover placeholder">无封面</span>
-              <span class="lib-meta">
-                <span class="lib-name">
-                  <button class="book-title" :class="{ bad: book.title_issue === 'brackets' }" :title="book.title || '未命名'" @click.stop="detailId = book.id">{{ book.title || "未命名" }}</button>
-                  <span v-if="book.name_conflict" class="mark">同名</span>
-                  <span v-if="book.title_issue === 'brackets'" class="mark bad">《》</span>
-                  <button v-if="book.title_issue === 'brackets'" type="button" class="rename-one" @click.stop="renameMarked([book])">重命名</button>
+              <span class="poster-cover">
+                <input type="checkbox" :checked="picked.has(book.id)" @click.stop @change="toggle(book.id)" />
+                <img
+                  v-if="!hiddenCovers[book.id]"
+                  class="cover"
+                  :src="`/api/covers/${book.id}?store=${store}`"
+                  alt=""
+                  draggable="false"
+                  loading="lazy"
+                  @error="hiddenCovers[book.id] = true"
+                />
+                <span v-else class="cover placeholder">无封面</span>
+                <span class="poster-detail">
+                  <span class="fact-size">大小 {{ formatSize(book.size) }}</span>
+                  <span class="fact-format" :class="{ 'pending-format': !hasFormat(book.primary_format) }">格式 {{ hasFormat(book.primary_format) ? formatLabel(book.primary_format) : "待删除" }}</span>
+                  <span class="fact-author">作者 {{ book.authors_text || "—" }}</span>
+                  <span v-if="book.series" class="poster-series">{{ book.series }} #{{ book.series_index }}</span>
+                  <span v-if="book.suggested_category" class="poster-suggest">推荐 {{ book.suggested_category }}</span>
+                  <span class="poster-path">{{ book.relative_path }}</span>
                 </span>
-                <span v-if="unclassified && book.suggested_category" class="suggest">推荐 {{ book.suggested_category }}</span>
-                <span class="dup-series" v-if="book.series">{{ book.series }} #{{ book.series_index }}</span>
-                <span class="card-foot">
-                  <span class="lib-facts">
-                    <span class="fact-size">大小 {{ formatSize(book.size) }}</span>
-                    <span class="fact-format" :class="{ 'pending-format': !hasFormat(book.primary_format) }">格式 {{ hasFormat(book.primary_format) ? formatLabel(book.primary_format) : "待删除" }}</span>
-                    <span class="fact-author" :title="book.authors_text || '—'">作者 {{ book.authors_text || "—" }}</span>
-                  </span>
-                  <span class="lib-path" :title="book.relative_path">{{ book.relative_path }}</span>
-                </span>
+              </span>
+              <span class="poster-name">
+                <button class="book-title" :class="{ bad: book.title_issue === 'brackets' }" :title="book.title || '未命名'" @click.stop="detailId = book.id">{{ book.title || "未命名" }}</button>
+                <span v-if="book.name_conflict" class="mark">同名</span>
+                <span v-if="book.title_issue === 'brackets'" class="mark bad">《》</span>
+                <button v-if="book.title_issue === 'brackets'" type="button" class="rename-one" @click.stop="renameMarked([book])">重命名</button>
               </span>
             </article>
           </div>
@@ -250,6 +245,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import BookDrawer from "../components/BookDrawer.vue";
 import FolderTree from "../components/FolderTree.vue";
+import SuggestTree from "../components/SuggestTree.vue";
 import { api, ApiError, waitJob, type BookRow, type FolderNode } from "../api";
 
 const props = defineProps<{ unclassified?: boolean; organized?: boolean }>();
@@ -394,6 +390,12 @@ function mark(key: string) {
 
 function choose(node: FolderNode) {
   selectedFolder.value = node;
+  load(1);
+}
+
+function chooseSuggest(name: string) {
+  suggest.value = name;
+  picked.value = new Set();
   load(1);
 }
 

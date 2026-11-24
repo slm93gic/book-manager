@@ -27,7 +27,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 a { color: inherit; }
 :focus-visible { outline: 2px solid rgba(15, 118, 110, 0.45); outline-offset: 2px; }
 
-.app-shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.app-shell { --nav-width: 220px; display: grid; grid-template-columns: var(--nav-width) 1fr; min-height: 100vh; }
 .nav {
   background: linear-gradient(180deg, #1c2428 0%, #14171c 62%, #102421 100%);
   color: #e7e5e4;
@@ -36,6 +36,19 @@ a { color: inherit; }
   flex-direction: column;
   gap: 2px;
 }
+.nav-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.nav-collapse {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fafaf9;
+  font-size: 18px;
+  line-height: 1;
+}
+.nav-collapse:hover { background: rgba(255, 255, 255, 0.16); }
 .brand {
   display: flex;
   align-items: center;
@@ -74,6 +87,16 @@ a { color: inherit; }
 .nav-icon { width: 1.25em; text-align: center; flex: none; }
 .nav a:hover { background: rgba(255, 255, 255, 0.06); color: white; }
 .nav a.router-link-active { background: linear-gradient(180deg, #14b8a6 0%, #0f766e 100%); color: white; }
+.app-shell.nav-collapsed { --nav-width: 88px; }
+.app-shell.nav-collapsed .nav { padding-left: 8px; padding-right: 8px; }
+.app-shell.nav-collapsed .nav-head { flex-direction: column; align-items: center; }
+.app-shell.nav-collapsed .brand { margin: 0 0 8px; }
+.app-shell.nav-collapsed .brand-mark { width: 40px; height: 40px; font-size: 22px; border-radius: 12px; }
+.app-shell.nav-collapsed .brand-name,
+.app-shell.nav-collapsed .nav-label,
+.app-shell.nav-collapsed .nav-text { display: none; }
+.app-shell.nav-collapsed .nav a { justify-content: center; padding: 10px 6px; }
+.app-shell.nav-collapsed .nav-icon { width: 1.5em; font-size: 28px; }
 .main {
   min-width: 0;
   display: flex;
@@ -127,7 +150,7 @@ a { color: inherit; }
 .dup-delete-bar {
   position: fixed;
   z-index: 24;
-  left: 220px;
+  left: var(--nav-width);
   right: 0;
   bottom: 0;
   display: flex;
@@ -444,6 +467,21 @@ input[type="checkbox"] { accent-color: var(--accent); }
   flex: none;
   line-height: 1;
 }
+.tree-toggle {
+  width: 1.5em;
+  height: 1.5em;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1;
+  flex: none;
+  cursor: pointer;
+}
+.tree-toggle.tree-leaf { display: inline-grid; place-items: center; pointer-events: none; }
+.suggest-tree .tree-item { min-width: 0; }
+.suggest-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.suggest-count { flex: none; color: var(--muted); font-size: 11px; }
 .tree-item.active { background: #f0fdfa; color: #115e59; }
 .tree-item.over { background: #ccfbf1; }
 .tree-children { margin-left: 16px; }
@@ -720,7 +758,12 @@ table.plain tr:last-child td { border-bottom: 0; }
   }
   .brand, .nav a { white-space: nowrap; flex: none; }
   .brand { margin: 0 8px 0 0; }
-  .nav-label, .nav-spacer { display: none; }
+  .nav-label, .nav-spacer, .nav-collapse { display: none; }
+  .app-shell.nav-collapsed .brand-name,
+  .app-shell.nav-collapsed .nav-text { display: inline; }
+  .app-shell.nav-collapsed .nav a { justify-content: flex-start; padding: 8px 10px; }
+  .app-shell.nav-collapsed .nav-icon { width: 1.25em; font-size: inherit; }
+  .app-shell.nav-collapsed .brand-mark { width: 28px; height: 28px; font-size: 14px; border-radius: 8px; }
   .nav a { min-height: 40px; display: inline-flex; align-items: center; gap: 6px; }
   .main { padding-bottom: env(safe-area-inset-bottom); }
   .split { grid-template-columns: 1fr; }
@@ -787,4 +830,90 @@ table.plain tr:last-child td { border-bottom: 0; }
   .brand { display: none; }
   .lib-card, .dup-card { grid-template-columns: auto 72px minmax(0, 1fr); gap: 8px; padding: 10px; }
   .lib-cards .cover, .dup-cards .cover { width: 72px; height: 100px; }
+}
+.poster-cards {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  justify-content: stretch;
+  align-items: start;
+}
+.poster-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #e7e5e4;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--lift);
+  cursor: pointer;
+}
+.poster-card.picked {
+  background: linear-gradient(180deg, #ffffff 0%, #f0fdfa 100%);
+  border-color: #5eead4;
+  box-shadow: var(--lift-strong);
+}
+.poster-card.pending { background: linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%); border-color: #f59e0b; }
+.poster-card.conflict { background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%); border-color: #fdba74; }
+.poster-cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f3efe8;
+}
+.poster-cover > input {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  margin: 0;
+}
+.poster-cards .cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+.poster-cards .cover.placeholder { display: grid; }
+.poster-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 28px 10px 10px;
+  overflow: auto;
+  background: linear-gradient(180deg, rgba(28, 25, 23, 0.08) 0%, rgba(28, 25, 23, 0.86) 58%);
+  color: #fafaf9;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.poster-cover:hover .poster-detail { opacity: 1; }
+.poster-detail .fact-size { color: #fdba74; }
+.poster-detail .fact-format { color: #5eead4; }
+.poster-detail .fact-format.pending-format { color: #fde68a; }
+.poster-detail .fact-author { color: #bfdbfe; white-space: normal; overflow: visible; text-overflow: unset; }
+.poster-series, .poster-suggest { color: #99f6e4; }
+.poster-path { color: #e7e5e4; word-break: break-all; }
+.poster-name { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; min-width: 0; padding: 6px 8px 7px; }
+.poster-name .mark, .poster-name .rename-one { flex: none; margin-top: 0; }
+.poster-card .book-title {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.35;
+  font-size: 13px;
+  color: #1c1917;
 }

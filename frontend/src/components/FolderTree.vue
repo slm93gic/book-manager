@@ -88,9 +88,8 @@ const TreeNodes = defineComponent({
                 },
               },
               [
-                h("button", { class: "ghost", type: "button", onClick: (event: Event) => { event.stopPropagation(); toggle(node as FolderNode); } }, opened.value[(node as FolderNode).id] ? "−" : "+"),
+                h("button", { class: "tree-toggle", type: "button", title: opened.value[(node as FolderNode).id] ? "收起" : "展开", onClick: (event: Event) => { event.stopPropagation(); toggle(node as FolderNode); } }, opened.value[(node as FolderNode).id] ? "📂" : "📁"),
                 h("span", (node as FolderNode).name),
-                (node as FolderNode).is_classified ? h("span", { class: "tag" }, "已分类") : null,
               ],
             ),
             opened.value[(node as FolderNode).id]
