@@ -34,6 +34,7 @@ from .catalog import (
     save_settings,
     edit_book_tags,
     rename_marked_books,
+    prepare_replace,
     update_book,
     update_folder,
     write_back_tags,
@@ -311,6 +312,21 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             return rename_marked_books(active_db(request), body.book_ids)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/books/replace-titles")
+    def replace_titles(body: ReplaceTitlesBody, request: Request):
+        try:
+            prepare_replace(body.book_ids, body.find, body.field, body.finds)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return request.app.state.core.jobs.start_replace(
+            body.book_ids,
+            body.find,
+            body.replace,
+            body.field,
+            body.finds,
+            request.query_params.get("store") or "library",
+        )
 
     @app.post("/api/books/tags")
     def edit_tags(body: EditTagsBody, request: Request):
@@ -642,6 +658,14 @@ class EditTagsBody(BaseModel):
     book_ids: list[int] = Field(default_factory=list)
     mode: str = "add"
     tags: list[str] = Field(default_factory=list)
+
+
+class ReplaceTitlesBody(BaseModel):
+    book_ids: list[int] = Field(default_factory=list)
+    find: str = ""
+    replace: str = ""
+    field: str = "title"
+    finds: list[str] = Field(default_factory=list)
 
 
 class MoveBody(BaseModel):

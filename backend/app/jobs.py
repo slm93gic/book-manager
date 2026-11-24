@@ -174,6 +174,20 @@ class JobManager:
     def start_rules(self, scope: str, book_ids: list[int] | None) -> dict:
         return self._start("rules", lambda job_id, runner: self._rules(job_id, runner, scope, book_ids))
 
+    def start_replace(
+        self,
+        book_ids: list[int],
+        find: str,
+        replace: str,
+        field: str,
+        finds: list[str] | None,
+        store: str = "library",
+    ) -> dict:
+        return self._start(
+            "replace",
+            lambda job_id, runner: self._replace(job_id, runner, book_ids, find, replace, field, finds, store),
+        )
+
     def _runner(self, job_id: int) -> JobRunner:
         with self.lock:
             item = self.workers.get(job_id)
@@ -292,6 +306,69 @@ class JobManager:
         if runner._cancel.is_set() or result.get("stopped"):
             self.mark(job_id, "cancelled", summary, final)
         elif result["failed"] and not result["deleted"]:
+            self.mark(job_id, "failed", summary, final)
+        else:
+            self.mark(job_id, "completed", summary, final)
+
+    def _replace(
+        self,
+        job_id: int,
+        runner: JobRunner,
+        book_ids: list[int],
+        find: str,
+        replace: str,
+        field: str,
+        finds: list[str] | None,
+        store: str = "library",
+    ) -> None:
+        from .catalog import replace_book_titles, sync_shelf
+
+        target_db = self.db
+        if store == "shelf" and self.shelf is not None:
+            sync_shelf(self.db, self.shelf)
+            target_db = self.shelf
+        total = len(book_ids)
+        self.mark(
+            job_id,
+            "running",
+            f"0/{total}",
+            {"phase": "replace", "done": 0, "total": total, "updated": 0, "written": 0, "failed": 0},
+        )
+
+        def on_progress(progress: dict) -> None:
+            status = "paused" if runner._pause.is_set() else "running"
+            done = int(progress.get("done") or 0)
+            whole = int(progress.get("total") or total)
+            self.mark(job_id, status, f"{done}/{whole}" if whole else "", progress)
+
+        try:
+            result = replace_book_titles(
+                target_db,
+                book_ids,
+                find,
+                replace,
+                field,
+                finds,
+                on_progress=on_progress,
+                runner=runner,
+            )
+        except Exception as exc:
+            self.mark(job_id, "failed", str(exc))
+            return
+        summary = f"已替换 {result['updated']}，回写 {result['written']}，失败 {len(result['failed'])}"
+        final = {
+            "phase": "replace",
+            "done": result["updated"] + result["unchanged"] + len(result["failed"]),
+            "total": total,
+            "updated": result["updated"],
+            "written": result["written"],
+            "failed": len(result["failed"]),
+            "unchanged": result["unchanged"],
+            "errors": result["failed"],
+        }
+        if runner._cancel.is_set() or result.get("stopped"):
+            self.mark(job_id, "cancelled", summary, final)
+        elif result["failed"] and not result["updated"]:
             self.mark(job_id, "failed", summary, final)
         else:
             self.mark(job_id, "completed", summary, final)

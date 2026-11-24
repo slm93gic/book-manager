@@ -8,8 +8,8 @@
       </div>
       <div class="detail-body">
         <div class="detail-side">
-          <img class="cover lg" :src="`/api/covers/${book.id}?store=${store}`" alt="" @error="hideCover" v-show="showCover" />
-          <p class="path drawer-path">{{ book.relative_path }}</p>
+          <img v-if="showCover" class="cover lg" :src="`/api/covers/${book.id}?store=${store}`" alt="" @error="hideCover" />
+          <span v-else class="cover lg placeholder">无封面</span>
           <p class="muted">来源 {{ book.metadata_source || "未知" }} · 可信度 {{ book.confidence || "未知" }} · {{ book.primary_format }}</p>
         </div>
         <div class="detail-form">
@@ -17,15 +17,17 @@
             <span class="field-name">书名<label class="check"><input type="checkbox" v-model="form.lock_title" />锁定</label></span>
             <input v-model="form.title" />
           </div>
-          <div class="field">
-            <span class="field-name">作者<label class="check"><input type="checkbox" v-model="form.lock_authors" />锁定</label></span>
-            <input v-model="authors" placeholder="用顿号或逗号分隔" />
+          <div class="detail-row">
+            <div class="field">
+              <span class="field-name">作者<label class="check"><input type="checkbox" v-model="form.lock_authors" />锁定</label></span>
+              <input v-model="authors" placeholder="用顿号或逗号分隔" />
+            </div>
+            <div class="field">
+              <span class="field-name">标签<label class="check"><input type="checkbox" v-model="form.lock_tags" />锁定</label></span>
+              <input v-model="tags" placeholder="用顿号或逗号分隔" />
+            </div>
           </div>
-          <div class="field">
-            <span class="field-name">标签<label class="check"><input type="checkbox" v-model="form.lock_tags" />锁定</label></span>
-            <input v-model="tags" placeholder="用顿号或逗号分隔" />
-            <p v-if="store !== 'shelf' && book.suggested_category" class="muted detail-note">推荐分类 {{ book.suggested_category }}。按中国图书馆分类法，用这本书自己的书名和标签算出，不写回文件。</p>
-          </div>
+          <p v-if="store !== 'shelf' && book.suggested_category" class="muted detail-note">推荐分类 {{ book.suggested_category }}。按中国图书馆分类法，用这本书自己的书名和标签算出，不写回文件。</p>
           <div class="detail-pair">
             <div class="field">
               <span class="field-name">丛书<label class="check"><input type="checkbox" v-model="form.lock_series" />锁定</label></span>
@@ -36,7 +38,21 @@
               <input v-model="form.series_index" />
             </div>
           </div>
-          <p class="muted detail-note">保存时只回写改过的书名、作者、标签和丛书。没有 metadata.opf 会新建，不改电子书正文。</p>
+          <div class="detail-pair">
+            <div class="field">
+              <span class="field-name">出版社</span>
+              <input v-model="form.publisher" />
+            </div>
+            <div class="field">
+              <span class="field-name">ISBN</span>
+              <input v-model="form.isbn" />
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-name">简介</span>
+            <textarea v-model="form.description" rows="6" />
+          </div>
+          <p class="muted detail-note">保存时只回写改过的书名、作者、标签、丛书、出版社、ISBN 和简介。没有 metadata.opf 会新建，不改电子书正文。</p>
           <p v-if="error" class="notice error">{{ error }}</p>
           <button class="primary" @click="save">保存并锁定已改字段</button>
         </div>
@@ -68,6 +84,9 @@ const form = reactive({
   title: "",
   series: "",
   series_index: "",
+  publisher: "",
+  isbn: "",
+  description: "",
   lock_title: false,
   lock_authors: false,
   lock_tags: false,
@@ -85,6 +104,9 @@ watch(
     form.title = book.value.title || "";
     form.series = book.value.series || "";
     form.series_index = book.value.series_index || "";
+    form.publisher = book.value.publisher || "";
+    form.isbn = book.value.isbn || "";
+    form.description = book.value.description || "";
     form.lock_title = !!book.value.lock_title;
     form.lock_authors = !!book.value.lock_authors;
     form.lock_tags = !!book.value.lock_tags;
@@ -94,9 +116,8 @@ watch(
   },
 );
 
-function hideCover(event: Event) {
+function hideCover() {
   showCover.value = false;
-  (event.target as HTMLImageElement).style.display = "none";
 }
 
 function split(value: string) {
@@ -123,6 +144,9 @@ async function save() {
         tags: split(tags.value),
         series: form.series,
         series_index: form.series_index,
+        publisher: form.publisher,
+        isbn: form.isbn,
+        description: form.description,
         lock_title: form.lock_title,
         lock_authors: form.lock_authors,
         lock_tags: form.lock_tags,

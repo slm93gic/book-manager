@@ -48,7 +48,7 @@ const page = ref(1);
 const total = ref(0);
 const pageSize = 10;
 const message = ref("");
-const names: Record<string, string> = { scan: "扫描", move: "移动", delete: "删除", rules: "整理" };
+const names: Record<string, string> = { scan: "扫描", move: "移动", delete: "删除", rules: "整理", replace: "替换" };
 const labels: Record<string, string> = {
   queued: "排队中",
   running: "进行中",

@@ -339,6 +339,8 @@ def _apply_opf_fields(meta, fields: dict) -> None:
         _replace_dc(meta, "publisher", [fields.get("publisher") or ""])
     if "isbn" in fields:
         _set_isbn(meta, (fields.get("isbn") or "").strip())
+    if "description" in fields:
+        _replace_dc(meta, "description", [fields.get("description") or ""])
     if "series" in fields:
         _set_meta_content(meta, ("calibre:series", "belongs-to-collection"), (fields.get("series") or "").strip())
     if "series_index" in fields:

@@ -76,7 +76,7 @@ const labels: Record<string, string> = {
   interrupted: "已中断",
 };
 
-const names: Record<string, string> = { scan: "扫描", move: "移动", delete: "删除", rules: "整理" };
+const names: Record<string, string> = { scan: "扫描", move: "移动", delete: "删除", rules: "整理", replace: "替换" };
 
 function percent(job: Job) {
   const done = Number(job.progress?.done);
@@ -90,7 +90,9 @@ function label(job: Job) {
   const state = labels[job.status] || job.status;
   const ratio = percent(job);
   const count = ratio === null ? "" : `${job.progress.done}/${job.progress.total}`;
-  return [name, state, count, job.message].filter(Boolean).join(" ");
+  const message = (job.message || "").trim();
+  const sameCount = count !== "" && message.replace(/\s/g, "") === count.replace(/\s/g, "");
+  return [name, state, count, sameCount ? "" : message].filter(Boolean).join(" ");
 }
 
 async function refresh() {

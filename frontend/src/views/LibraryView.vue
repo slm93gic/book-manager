@@ -35,23 +35,13 @@
       </div>
       <div v-else class="toolbar-actions">
         <button class="primary" :disabled="!picked.size" @click="askMove">移动到…{{ picked.size ? `（${picked.size}）` : "" }}</button>
+        <button class="ghost" :disabled="!picked.size" @click="askReplace">批量替换</button>
         <button class="danger" :disabled="!picked.size" @click="removeBooks">删除所选</button>
         <span class="muted picked-count">已选 {{ picked.size }} / {{ total }} 本</span>
         <details ref="moreBox" class="more">
           <summary class="ghost">更多</summary>
           <div class="more-menu">
             <button class="ghost" @click="runMore(() => load(1))">查询</button>
-            <label v-if="organized" class="check"><input type="checkbox" v-model="recursive" /> 包含子目录</label>
-            <button class="ghost" @click="runMore(askFolder)">{{ categoryShare ? `在 ${categoryShare} 下新建分类` : "在书库下新建分类" }}</button>
-            <button v-if="organized" class="ghost" :disabled="!selectedFolder" @click="runMore(renameFolder)">重命名</button>
-            <button v-if="organized" class="ghost" :disabled="!selectedFolder" @click="runMore(markClassified)">标为已分类</button>
-            <button v-if="organized" class="danger" :disabled="!selectedFolder" @click="runMore(removeFolder)">删除空目录</button>
-            <button class="ghost" :disabled="!books.length" @click="runMore(selectPage)">全选本页</button>
-            <button class="ghost" :disabled="!total" @click="runMore(selectResults)">全选当前结果</button>
-            <button class="ghost" :disabled="!picked.size" @click="runMore(clearPicked)">取消选择</button>
-            <button class="ghost" :disabled="!picked.size" @click="runMore(askTags)">修改标签</button>
-            <button class="ghost" :disabled="!picked.size" @click="runMore(writeTags)">回写标签</button>
-            <button class="danger" :disabled="!picked.size" @click="runMore(renamePicked)">重命名标记</button>
             <button class="ghost" @click="runMore(scan)">扫描书库</button>
             <button class="danger" @click="runMore(clearRecords)">清空扫描记录</button>
           </div>
@@ -182,6 +172,7 @@
         <h2>{{ dialogTitle }}</h2>
         <p v-if="dialog === 'move'">把选中的 {{ moveIds.length }} 本图书从书库手动移到 {{ categoryShare || "书库" }} 下，例如 {{ categoryShare || "书库" }}/小说。</p>
         <p v-else-if="dialog === 'tags'" class="muted">只改选中图书的标签，并把改过的标签写回各自文件夹的 metadata.opf。书名、作者和其他内容不动。没有该文件会新建。</p>
+        <p v-else-if="dialog === 'replace'" class="muted">把选中的 {{ picked.size }} 本里，书名或作者中的文字换成新的，并回写 metadata.opf。不改文件夹名，也不改电子书正文。没有该文件会新建。</p>
         <p v-else class="muted">分类文件夹建在 {{ categoryShare || "书库" }} 下，不会建到某一本书里面。</p>
         <template v-if="dialog === 'tags'">
           <label class="field">方式
@@ -193,7 +184,47 @@
           </label>
           <label class="field">标签<input v-model="tagInput" placeholder="多个标签用顿号或逗号分隔，例如 小说、历史" /></label>
         </template>
+        <template v-else-if="dialog === 'replace'">
+          <div class="replace-fields" role="radiogroup" aria-label="替换属性">
+            <label class="check"><input type="radio" value="title" v-model="replaceField" /> 书名</label>
+            <label class="check"><input type="radio" value="author" v-model="replaceField" /> 作者</label>
+          </div>
+          <p class="muted">下面是已勾选图书的{{ replaceFieldLabel }}。单击选中并填入查找框，可多选。</p>
+          <div class="replace-choices">
+            <button
+              v-for="item in replaceChoices"
+              :key="item"
+              type="button"
+              :class="{ on: replaceTerms.includes(item) }"
+              @click="toggleReplaceChoice(item)"
+            >{{ item }}</button>
+            <p v-if="!replaceChoices.length" class="muted">选中的图书没有{{ replaceFieldLabel }}。</p>
+          </div>
+          <label class="field">查找<textarea v-model="replaceFind" class="replace-find" rows="3" placeholder="点上面的内容填入，一行一项，也可自己输入" /></label>
+          <label class="field">替换为<input v-model="replaceWith" placeholder="留空则删掉这段文字" /></label>
+          <ul v-if="replacePreview.length" class="replace-preview">
+            <li v-for="item in replacePreview" :key="item.id">{{ item.before }} → {{ item.after || `（${replaceFieldLabel}会变成空，这一本不会改）` }}</li>
+          </ul>
+          <p v-else-if="replaceTerms.length" class="muted">选中的{{ replaceFieldLabel }}里没有这些文字。其他页里如果有，确认后也会替换。</p>
+        </template>
         <template v-else-if="dialog === 'move'">
+          <div v-if="recentCategories.length" class="recent-categories">
+            <p class="muted">最近常用</p>
+            <div class="recent-category-row">
+              <button
+                v-for="folder in recentCategories"
+                :key="folder.id"
+                type="button"
+                class="category-card author-tag"
+                :class="{ on: dialogValue === folder.relative_path && !newCategory.trim() }"
+                :style="{ background: categoryFill(folder.relative_path) }"
+                :title="folder.name"
+                @click="chooseCategory(folder.relative_path)"
+              >
+                <span>{{ folder.name }}</span>
+              </button>
+            </div>
+          </div>
           <label class="field">已有分类
             <button type="button" class="category-trigger" @click="openCategoryPanel">
               {{ chosenCategoryName && !newCategory.trim() ? chosenCategoryName : "请选择" }}
@@ -219,22 +250,65 @@
           <input v-model="categoryQuery" placeholder="搜索分类，例如 小说" />
           <span class="muted">{{ categoryHint }}</span>
         </label>
-        <div ref="categoryList" class="category-cards" role="listbox">
-          <button
-            v-for="folder in filteredCategories"
-            :key="folder.id"
-            type="button"
-            class="category-card"
-            :class="{ on: dialogValue === folder.relative_path }"
-            :style="{ background: categoryFill(folder.relative_path) }"
-            :data-path="folder.relative_path"
-            role="option"
-            :aria-selected="dialogValue === folder.relative_path"
-            @click="chooseCategory(folder.relative_path)"
-          >
-            <span>{{ folder.name }}</span>
-          </button>
-          <p v-if="!filteredCategories.length" class="muted">没有匹配的分类</p>
+        <div ref="categoryList" class="category-board" role="listbox">
+          <section v-if="categoryLayout.authors.length" class="category-authors">
+            <h3>作者<span>{{ categoryLayout.authors.length }}</span></h3>
+            <div class="category-author-grid">
+              <button
+                v-for="folder in categoryLayout.authors"
+                :key="folder.id"
+                type="button"
+                class="category-card author-tag"
+                :class="{ on: dialogValue === folder.relative_path }"
+                :style="{ background: categoryFill(folder.relative_path) }"
+                :data-path="folder.relative_path"
+                :title="folder.name"
+                role="option"
+                :aria-selected="dialogValue === folder.relative_path"
+                @click="chooseCategory(folder.relative_path)"
+              >
+                <span>{{ folder.suffix }}</span>
+              </button>
+            </div>
+          </section>
+          <div v-if="categoryLayout.loose.length" class="category-loose">
+            <button
+              v-for="folder in categoryLayout.loose"
+              :key="folder.id"
+              type="button"
+              class="category-card"
+              :class="{ on: dialogValue === folder.relative_path }"
+              :style="{ background: categoryFill(folder.relative_path) }"
+              :data-path="folder.relative_path"
+              :title="folder.name"
+              role="option"
+              :aria-selected="dialogValue === folder.relative_path"
+              @click="chooseCategory(folder.relative_path)"
+            >
+              <span>{{ folder.name }}</span>
+            </button>
+          </div>
+          <section v-for="group in categoryLayout.groups" :key="group.key" class="category-authors">
+            <h3>{{ group.key }}<span>{{ group.items.length }}</span></h3>
+            <div class="category-author-grid">
+              <button
+                v-for="folder in group.items"
+                :key="folder.id"
+                type="button"
+                class="category-card author-tag"
+                :class="{ on: dialogValue === folder.relative_path }"
+                :style="{ background: categoryFill(folder.relative_path) }"
+                :data-path="folder.relative_path"
+                :title="folder.name"
+                role="option"
+                :aria-selected="dialogValue === folder.relative_path"
+                @click="chooseCategory(folder.relative_path)"
+              >
+                <span>{{ folder.suffix }}</span>
+              </button>
+            </div>
+          </section>
+          <p v-if="!categoryLayout.authors.length && !categoryLayout.loose.length && !categoryLayout.groups.length" class="muted">没有匹配的分类</p>
         </div>
         <div class="row" style="margin-top: 12px">
           <button class="ghost" type="button" @click="categoryPanel = false">关闭</button>
@@ -305,6 +379,58 @@ function runMore(action: () => void) {
   action();
 }
 const tree = ref<{ reload: () => Promise<void> } | null>(null);
+const replaceFind = ref("");
+const replaceWith = ref("");
+const replaceField = ref<"title" | "author">("title");
+const replaceFieldLabel = computed(() => (replaceField.value === "author" ? "作者" : "书名"));
+const replaceTerms = computed(() => replaceFind.value.split("\n").filter((item) => item !== ""));
+const replaceChoices = computed(() => {
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const book of books.value) {
+    if (!picked.value.has(book.id)) continue;
+    const parts = replaceField.value === "author"
+      ? (book.authors_text || "").split("、")
+      : [book.title || ""];
+    for (const part of parts) {
+      const text = part.trim();
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      values.push(text);
+    }
+  }
+  return values;
+});
+function applyReplaceTerms(value: string) {
+  const terms = [...replaceTerms.value].sort((a, b) => b.length - a.length);
+  let next = value;
+  for (const term of terms) next = next.split(term).join(replaceWith.value);
+  return next.trim();
+}
+const replacePreview = computed(() => {
+  if (!replaceTerms.value.length) return [];
+  return books.value
+    .filter((book) => picked.value.has(book.id))
+    .flatMap((book) => {
+      const before = replaceField.value === "author" ? book.authors_text || "" : book.title || "";
+      const after = replaceField.value === "author"
+        ? before.split("、").map((name) => applyReplaceTerms(name)).filter(Boolean).join("、")
+        : applyReplaceTerms(before);
+      if (!before || before === after) return [];
+      return [{ id: book.id, before, after }];
+    })
+    .slice(0, 8);
+});
+watch(replaceField, () => {
+  replaceFind.value = "";
+});
+function toggleReplaceChoice(value: string) {
+  const lines = replaceFind.value.split("\n").filter((item) => item !== "");
+  const index = lines.indexOf(value);
+  if (index >= 0) lines.splice(index, 1);
+  else lines.push(value);
+  replaceFind.value = lines.join("\n");
+}
 const dialog = ref("");
 const dialogTitle = ref("");
 const dialogValue = ref("");
@@ -313,16 +439,45 @@ const categories = ref<FolderNode[]>([]);
 const categoryQuery = ref("");
 const categoryPanel = ref(false);
 const categoryList = ref<HTMLElement | null>(null);
-const filteredCategories = computed(() => {
+const recentPaths = ref<string[]>(readRecentCategories());
+const recentCategories = computed(() => {
+  const byPath = new Map(categories.value.map((folder) => [folder.relative_path, folder]));
+  return recentPaths.value.flatMap((path) => {
+    const folder = byPath.get(path);
+    return folder ? [folder] : [];
+  }).slice(0, 5);
+});
+const categoryLayout = computed(() => {
   const query = categoryQuery.value.trim().toLowerCase();
-  if (!query) return categories.value;
-  return categories.value.filter((folder) =>
-    folder.name.toLowerCase().includes(query) || folder.relative_path.toLowerCase().includes(query),
-  );
+  const matched = categories.value.filter((folder) => {
+    if (!query) return true;
+    return folder.name.toLowerCase().includes(query) || folder.relative_path.toLowerCase().includes(query);
+  });
+  const grouped = new Map<string, { id: number; name: string; relative_path: string; suffix: string }[]>();
+  const loose: FolderNode[] = [];
+  for (const folder of matched) {
+    const name = folder.name || "";
+    const mark = name.indexOf("_");
+    if (mark > 0) {
+      const key = name.slice(0, mark);
+      const items = grouped.get(key) || [];
+      items.push({ id: folder.id, name, relative_path: folder.relative_path, suffix: name.slice(mark + 1) || name });
+      grouped.set(key, items);
+    } else {
+      loose.push(folder);
+    }
+  }
+  const sortNames = (items: { suffix: string }[]) => items.slice().sort((a, b) => a.suffix.localeCompare(b.suffix, "zh"));
+  const authors = sortNames(grouped.get("作者") || []);
+  grouped.delete("作者");
+  const groups = [...grouped.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], "zh"))
+    .map(([key, items]) => ({ key, items: sortNames(items) }));
+  return { loose, authors, groups, shown: matched.length };
 });
 const categoryHint = computed(() => {
   const totalCount = categories.value.length;
-  const shown = filteredCategories.value.length;
+  const shown = categoryLayout.value.shown;
   if (!categoryQuery.value.trim()) return `共 ${totalCount} 个`;
   return `找到 ${shown} 个 / 共 ${totalCount} 个`;
 });
@@ -454,6 +609,61 @@ async function selectResults() {
   picked.value = new Set(data.ids);
   message.value = `已选当前结果 ${data.total} 本`;
   error.value = false;
+}
+
+function askReplace() {
+  if (!picked.value.size) return;
+  dialog.value = "replace";
+  dialogTitle.value = `替换 ${picked.value.size} 本`;
+  replaceField.value = "title";
+  replaceFind.value = "";
+  replaceWith.value = "";
+}
+
+async function confirmReplace() {
+  const finds = replaceFind.value.split("\n").filter((item) => item !== "");
+  if (!finds.length) {
+    message.value = "请选择或填写要替换的文字";
+    error.value = true;
+    return;
+  }
+  const ids = [...picked.value];
+  const replacement = replaceWith.value;
+  const field = replaceField.value;
+  const label = field === "author" ? "作者" : "书名";
+  dialog.value = "";
+  await act(async () => {
+    const job = await api<{ id: number }>(`/api/books/replace-titles?store=${store.value}`, {
+      method: "POST",
+      body: JSON.stringify({ book_ids: ids, finds, replace: replacement, field }),
+    });
+    message.value = `正在替换 ${ids.length} 本${label}`;
+    const done = await waitJob(job.id);
+    const progress = done.progress || {};
+    const updated = Number(progress.updated || 0);
+    const written = Number(progress.written || 0);
+    const failed = Number(progress.failed || 0);
+    if (done.status === "cancelled") {
+      message.value = done.message || "替换已取消";
+      error.value = false;
+      return;
+    }
+    if (done.status === "failed" && !updated && !failed) {
+      message.value = done.message || "替换失败";
+      error.value = true;
+      return;
+    }
+    if (!updated && !failed) {
+      message.value = `选中的${label}里没有这段文字，未回写`;
+      error.value = false;
+      return;
+    }
+    message.value = failed
+      ? `已替换 ${updated} 本${label}，回写 ${written} 本，失败 ${failed} 本`
+      : `已替换 ${updated} 本${label}，并回写 ${written} 本`;
+    error.value = failed > 0 || done.status === "failed";
+  });
+  await load(page.value);
 }
 
 function askTags() {
@@ -622,75 +832,85 @@ async function askMove() {
   categoryPanel.value = false;
 }
 
-const warmTones = [
-  { hue: 8, sat: 74, light: 46 },
-  { hue: 18, sat: 78, light: 42 },
-  { hue: 28, sat: 76, light: 38 },
-  { hue: 36, sat: 80, light: 34 },
-  { hue: 348, sat: 70, light: 46 },
-  { hue: 336, sat: 68, light: 44 },
-];
-const coolTones = [
-  { hue: 152, sat: 58, light: 32 },
-  { hue: 168, sat: 70, light: 30 },
-  { hue: 188, sat: 78, light: 30 },
-  { hue: 204, sat: 74, light: 40 },
-  { hue: 222, sat: 72, light: 46 },
-  { hue: 262, sat: 64, light: 46 },
-];
+const GOLDEN_HUE = 137.508;
 
-function categoryPaint(tone: { hue: number; sat: number; light: number }, top: number) {
-  const bottom = Math.max(22, Math.round(top - 8));
-  const deep = Math.min(88, tone.sat + 8);
-  return `linear-gradient(165deg, hsl(${tone.hue} ${tone.sat}% ${Math.round(top)}%), hsl(${tone.hue} ${deep}% ${bottom}%))`;
+function toneRange(hue: number) {
+  const distance = Math.min(Math.abs(hue - 52), 360 - Math.abs(hue - 52));
+  const yellow = Math.max(0, 1 - distance / 40);
+  return { top: Math.round(48 - yellow * 14), floor: Math.round(28 - yellow * 6) };
+}
+
+function categoryPaint(hue: number, light: number, sat: number) {
+  const bottom = Math.max(22, Math.round(light - 12));
+  const shifted = (hue + 12) % 360;
+  return `linear-gradient(155deg, hsl(${Math.round(hue)} ${Math.round(sat)}% ${Math.round(light)}%), hsl(${Math.round(shifted)} ${Math.min(90, Math.round(sat + 8))}% ${bottom}%))`;
 }
 
 const categoryFills = computed(() => {
   const fills = new Map<string, string>();
   const groups = new Map<string, string[]>();
+  const singles: string[] = [];
   for (const folder of categories.value) {
     const name = folder.name || "";
     const mark = name.indexOf("_");
-    if (mark <= 0) continue;
-    const key = name.slice(0, mark);
-    const paths = groups.get(key) || [];
-    paths.push(folder.relative_path);
-    groups.set(key, paths);
+    if (mark > 0) {
+      const key = name.slice(0, mark);
+      const paths = groups.get(key) || [];
+      paths.push(folder.relative_path);
+      groups.set(key, paths);
+    } else {
+      singles.push(folder.relative_path);
+    }
   }
-  const toneOf = new Map<string, { hue: number; sat: number; light: number }>();
-  let warmCount = 0;
-  let coolCount = 0;
-  let wantWarm = false;
-  const takeTone = () => {
-    const tone = wantWarm ? warmTones[warmCount++ % warmTones.length] : coolTones[coolCount++ % coolTones.length];
-    wantWarm = !wantWarm;
-    return tone;
+  const nameOf = new Map(categories.value.map((folder) => [folder.relative_path, folder.name || ""]));
+  const suffixOf = (path: string) => {
+    const name = nameOf.get(path) || "";
+    const mark = name.indexOf("_");
+    return mark > 0 ? name.slice(mark + 1) : name;
   };
-  for (const folder of categories.value) {
-    const name = folder.name || "";
-    const mark = name.indexOf("_");
-    const id = mark > 0 ? `g:${name.slice(0, mark)}` : `p:${folder.relative_path}`;
-    if (!toneOf.has(id)) toneOf.set(id, takeTone());
-  }
-  for (const folder of categories.value) {
-    const name = folder.name || "";
-    if (name.indexOf("_") > 0) continue;
-    const tone = toneOf.get(`p:${folder.relative_path}`) || coolTones[0];
-    fills.set(folder.relative_path, categoryPaint(tone, tone.light));
+  const keys = [
+    ...[...groups.keys()].map((key) => ({ id: `g:${key}`, label: key })),
+    ...singles.map((path) => ({ id: `p:${path}`, label: path })),
+  ].sort((a, b) => a.label.localeCompare(b.label, "zh"));
+  const hueOf = new Map(keys.map((item, index) => [item.id, (index * GOLDEN_HUE) % 360]));
+  for (const path of singles) {
+    const hue = hueOf.get(`p:${path}`) ?? 210;
+    fills.set(path, categoryPaint(hue, toneRange(hue).top, 76));
   }
   for (const [key, paths] of groups) {
-    const tone = toneOf.get(`g:${key}`) || warmTones[0];
-    const floor = Math.max(24, tone.light - 12);
-    paths.forEach((path, index) => {
-      const step = paths.length <= 1 ? 0 : index / (paths.length - 1);
-      fills.set(path, categoryPaint(tone, tone.light - step * (tone.light - floor)));
+    const ordered = [...paths].sort((a, b) => suffixOf(a).localeCompare(suffixOf(b), "zh"));
+    const base = hueOf.get(`g:${key}`) ?? 12;
+    const { top, floor } = toneRange(base);
+    const span = Math.min(56, 12 + ordered.length * 2);
+    ordered.forEach((path, index) => {
+      const step = paths.length <= 1 ? 0.5 : index / (paths.length - 1);
+      const hue = (base + (step - 0.5) * span + 360) % 360;
+      fills.set(path, categoryPaint(hue, top - step * (top - floor), 80 - step * 12));
     });
   }
   return fills;
 });
 
+function readRecentCategories() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("bm_recent_categories") || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === "string" && item !== "").slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+
+function rememberCategory(path: string) {
+  const target = path.trim();
+  if (!target) return;
+  const next = [target, ...recentPaths.value.filter((item) => item !== target)].slice(0, 5);
+  recentPaths.value = next;
+  localStorage.setItem("bm_recent_categories", JSON.stringify(next));
+}
+
 function categoryFill(path: string) {
-  return categoryFills.value.get(path) || categoryPaint(coolTones[4], 46);
+  return categoryFills.value.get(path) || categoryPaint(210, 42, 74);
 }
 
 function openCategoryPanel() {
@@ -710,7 +930,7 @@ function scrollChosenCategory() {
     const root = categoryList.value;
     const chosen = dialogValue.value;
     if (!root || !chosen) return;
-    const hit = [...root.querySelectorAll<HTMLButtonElement>(".category-option")].find((node) => node.dataset.path === chosen);
+    const hit = [...root.querySelectorAll<HTMLButtonElement>(".category-card")].find((node) => node.dataset.path === chosen);
     hit?.scrollIntoView({ block: "nearest" });
   });
 }
@@ -743,6 +963,10 @@ function askFolder() {
 }
 
 async function confirmDialog() {
+  if (dialog.value === "replace") {
+    await confirmReplace();
+    return;
+  }
   if (dialog.value === "tags") {
     await confirmTags();
     return;
@@ -792,6 +1016,7 @@ async function move(ids: number[], target: string, confirmed = false) {
       method: "POST",
       body: JSON.stringify({ book_ids: ids, target, confirmed: confirmed || ids.length <= threshold.value }),
     });
+    rememberCategory(target);
     const done = await waitJob(job.id);
     message.value = done.message || done.status;
     error.value = done.status === "failed";

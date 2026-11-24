@@ -1610,6 +1610,143 @@ def rename_marked_books(db: Database, book_ids: list[int]) -> dict:
     return {"renamed": renamed, "written": written, "failed": failed}
 
 
+def _replace_terms(find: str, finds: list[str] | None) -> list[str]:
+    terms = [item for item in (finds or []) if item != ""]
+    if not terms and find != "":
+        terms = [find]
+    unique = list(dict.fromkeys(terms))
+    unique.sort(key=len, reverse=True)
+    return unique
+
+
+def prepare_replace(book_ids: list[int], find: str, field: str, finds: list[str] | None = None) -> None:
+    if not [int(item) for item in book_ids]:
+        raise ValueError("请先选择图书")
+    if not _replace_terms(find, finds):
+        raise ValueError("请填写要替换的文字")
+    if field not in {"title", "author"}:
+        raise ValueError("只能替换书名或作者")
+
+
+def replace_book_titles(
+    db: Database,
+    book_ids: list[int],
+    find: str,
+    replace: str,
+    field: str = "title",
+    finds: list[str] | None = None,
+    on_progress=None,
+    runner=None,
+) -> dict:
+    """把选中图书的书名或作者里的一段或多段文字换成另一段，并回写 metadata.opf。不改文件夹名。"""
+    ids = [int(item) for item in book_ids]
+    prepare_replace(ids, find, field, finds)
+    terms = _replace_terms(find, finds)
+    ensure_connected(db)
+    updated = 0
+    written = 0
+    unchanged = 0
+    failed: list[dict] = []
+    stopped = False
+    total = len(ids)
+
+    def report(done: int) -> None:
+        if on_progress:
+            on_progress(
+                {
+                    "phase": "replace",
+                    "done": done,
+                    "total": total,
+                    "updated": updated,
+                    "written": written,
+                    "failed": len(failed),
+                    "unchanged": unchanged,
+                }
+            )
+
+    report(0)
+    for index, book_id in enumerate(ids, start=1):
+        if runner is not None and runner.checkpoint() == "cancelled":
+            stopped = True
+            break
+        try:
+            outcome = (
+                _replace_one_title(db, book_id, terms, replace)
+                if field == "title"
+                else _replace_one_author(db, book_id, terms, replace)
+            )
+        except (OSError, ValueError) as exc:
+            failed.append({"id": book_id, "error": str(exc)})
+            report(index)
+            continue
+        if outcome.get("skipped"):
+            unchanged += 1
+        elif outcome.get("error"):
+            failed.append({"id": book_id, "error": outcome["error"]})
+        else:
+            updated += 1
+            back = write_back_fields(db, book_id, outcome["fields"])
+            if back["failed"]:
+                failed.append({"id": book_id, "error": back["failed"][0]["error"]})
+            else:
+                written += back["written"]
+        report(index)
+    return {
+        "updated": updated,
+        "written": written,
+        "unchanged": unchanged,
+        "failed": failed,
+        "stopped": stopped,
+    }
+
+
+def _apply_terms(value: str, terms: list[str], replace: str) -> str:
+    for term in terms:
+        value = value.replace(term, replace)
+    return value.strip()
+
+
+def _replace_one_title(db: Database, book_id: int, terms: list[str], replace: str) -> dict:
+    with db.transaction() as conn:
+        row = conn.execute("SELECT id, title FROM books WHERE id=? AND missing=0", (book_id,)).fetchone()
+        if not row:
+            return {"error": "图书不存在或已缺失"}
+        title = row["title"] or ""
+        if not any(term in title for term in terms):
+            return {"skipped": True}
+        new_title = _apply_terms(title, terms, replace)
+        if not new_title:
+            return {"error": "改后的书名为空"}
+        if new_title == title:
+            return {"skipped": True}
+        conn.execute("UPDATE books SET title=?, lock_title=1 WHERE id=?", (new_title, book_id))
+        refresh_fts(conn, book_id)
+    return {"fields": {"title": new_title}}
+
+
+def _replace_one_author(db: Database, book_id: int, terms: list[str], replace: str) -> dict:
+    with db.transaction() as conn:
+        row = conn.execute("SELECT id, authors_text FROM books WHERE id=? AND missing=0", (book_id,)).fetchone()
+        if not row:
+            return {"error": "图书不存在或已缺失"}
+        names = _split_stored(row["authors_text"])
+        if not any(term in name for name in names for term in terms):
+            return {"skipped": True}
+        updated = []
+        for name in names:
+            changed = _apply_terms(name, terms, replace)
+            if changed:
+                updated.append(changed)
+        if not updated:
+            return {"error": "改后的作者为空"}
+        if updated == names:
+            return {"skipped": True}
+        set_authors(conn, book_id, updated)
+        conn.execute("UPDATE books SET lock_authors=1 WHERE id=?", (book_id,))
+        refresh_fts(conn, book_id)
+    return {"fields": {"authors": updated}}
+
+
 def _rename_marked_book(db: Database, book_id: int, suggest_title) -> dict:
     with db.transaction() as conn:
         row = conn.execute("SELECT * FROM books WHERE id=? AND missing=0", (book_id,)).fetchone()
@@ -1720,7 +1857,7 @@ def _changed_opf_fields(row, payload: dict) -> dict:
         tags = _clean_tag_names(list(payload.get("tags") or []))
         if tags != _split_stored(row["tags_text"]):
             changed["tags"] = tags
-    for column in ("publisher", "isbn", "series", "series_index"):
+    for column in ("publisher", "isbn", "description", "series", "series_index"):
         if column not in payload:
             continue
         value = str(payload.get(column) or "").strip()
